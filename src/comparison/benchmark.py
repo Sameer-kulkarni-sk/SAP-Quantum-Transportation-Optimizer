@@ -6,9 +6,10 @@ from optimizers.classical.exact_solver import ExactSolver
 from optimizers.classical.genetic_algorithm import GeneticAlgorithm
 from optimizers.base_optimizer import OptimizationResult
 
-# Try to import quantum optimizer
+# Try to import quantum optimizers
 try:
     from optimizers.quantum.qaoa_optimizer import QAOAOptimizer
+    from optimizers.quantum.hybrid_qaoa_optimizer import HybridQAOAOptimizer
     QUANTUM_AVAILABLE = True
 except ImportError:
     QUANTUM_AVAILABLE = False
@@ -137,14 +138,37 @@ class BenchmarkSuite:
         except Exception as e:
             print(f"   ✗ Error: {e}\n")
 
-        # 5. QAOA (if requested)
+        # 5. Hybrid QAOA (if requested) - Solves ALL shipments
         if include_quantum:
-            print("⚛️  Running QAOA (quantum approach - educational)...")
+            print("⚛️  Running Hybrid QAOA (quantum-classical hybrid)...")
+            print("   ✓ Can solve ALL shipments using divide-and-conquer approach")
             print(
-                "   ⚠️  QAOA limited to small subset due to quantum simulation constraints")
+                f"   Processing {len(self.shipments)} shipments in quantum-optimized chunks\n")
 
-            # QAOA can only handle ~3-4 shipments due to quantum simulation limits
-            # Use same small subset that all other algorithms will solve
+            try:
+                hybrid_qaoa = HybridQAOAOptimizer(
+                    self.shipments, self.trucks, self.lanes,
+                    chunk_size=10,
+                    qaoa_reps=2,
+                    max_iter=50
+                )
+                self.results['hybrid_qaoa'] = hybrid_qaoa.optimize()
+                print(
+                    f"   ✓ Completed in {self.results['hybrid_qaoa'].computation_time:.2f}s")
+                quantum_pct = self.results['hybrid_qaoa'].metadata.get(
+                    'quantum_percentage', 0)
+                print(
+                    f"   ✓ Quantum optimization: {quantum_pct:.0f}% of chunks")
+                print(
+                    f"   ✓ Solved {self.results['hybrid_qaoa'].shipments_assigned}/{len(self.shipments)} shipments\n")
+            except Exception as e:
+                print(f"   ✗ Error: {e}\n")
+
+            # Also run pure QAOA for comparison (small subset)
+            print("⚛️  Running Pure QAOA (educational - small subset)...")
+            print(
+                "   ⚠️  Pure QAOA limited to small subset due to quantum simulation constraints")
+
             qaoa_shipments = self.shipments[:3]
             qaoa_trucks = self.trucks[:2]
 
@@ -161,7 +185,7 @@ class BenchmarkSuite:
                 print(
                     f"   ✓ Completed in {self.results['qaoa'].computation_time:.2f}s")
                 print(
-                    f"   ⚠️  Note: QAOA solved only {len(qaoa_shipments)}/{len(self.shipments)} shipments (quantum limitation)\n")
+                    f"   ⚠️  Note: Pure QAOA solved only {len(qaoa_shipments)}/{len(self.shipments)} shipments (quantum limitation)\n")
             except Exception as e:
                 print(f"   ✗ Error: {e}\n")
 

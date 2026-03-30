@@ -2,7 +2,7 @@
 # Final deployment script with password handling
 # Password: Qiskit1!
 
-RASQBERRY_IP="192.168.0.108"
+RASQBERRY_IP="100.67.33.252"
 RASQBERRY_USER="rasqberry"
 RASQBERRY_PASS="Qiskit1!"
 RASQBERRY_HOST="${RASQBERRY_USER}@${RASQBERRY_IP}"
@@ -118,7 +118,7 @@ echo "  DEPLOYMENT SUCCESSFUL!"
 echo "=========================================================================="
 echo ""
 echo "To launch the touchscreen GUI:"
-echo "  ssh rasqberry@192.168.0.108"
+echo "  ssh rasqberry@100.67.33.252"
 echo "  Password: Qiskit1!"
 echo "  source /home/rasqberry/RasQberry-Two/venv/RQB2/bin/activate"
 echo "  cd /home/rasqberry/RasQberry-Two/examples/quantum_transport_optimizer/src"
