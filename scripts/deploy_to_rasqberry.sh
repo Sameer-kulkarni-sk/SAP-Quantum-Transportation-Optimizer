@@ -15,12 +15,12 @@ NC='\033[0m' # No Color
 if [ -z "$1" ]; then
     echo -e "${RED}Error: RasQberry IP address required${NC}"
     echo "Usage: ./scripts/deploy_to_rasqberry.sh YOUR_RASQBERRY_IP"
-    echo "Example: ./scripts/deploy_to_rasqberry.sh 100.67.33.252"
+    echo "Example: ./scripts/deploy_to_rasqberry.sh 192.168.1.100"
     exit 1
 fi
 
 RASQBERRY_IP="$1"
-RASQBERRY_USER="rasqberry"
+RASQBERRY_USER="${2:-rasqberry}"
 RASQBERRY_HOST="${RASQBERRY_USER}@${RASQBERRY_IP}"
 APP_DIR="/home/${RASQBERRY_USER}/RasQberry-Two/examples/quantum_transport_optimizer"
 VENV_PATH="/home/${RASQBERRY_USER}/RasQberry-Two/venv/RQB2"
@@ -49,7 +49,7 @@ echo ""
 
 # Step 2: Transfer files
 echo -e "${BLUE}[2/5] Transferring files to RasQberry...${NC}"
-echo -e "${YELLOW}Password: Qiskit1!${NC}"
+echo -e "${YELLOW}You will be prompted for your RasQberry password${NC}"
 scp /tmp/quantum_transport_optimizer.tar.gz ${RASQBERRY_HOST}:/tmp/
 echo -e "${GREEN}✓ Files transferred${NC}"
 echo ""
@@ -123,6 +123,4 @@ echo "  ssh ${RASQBERRY_HOST}"
 echo "  source ${VENV_PATH}/bin/activate"
 echo "  cd ${APP_DIR}/src"
 echo "  python main.py --demo"
-echo ""
-echo -e "${YELLOW}Password: Qiskit1!${NC}"
 echo ""

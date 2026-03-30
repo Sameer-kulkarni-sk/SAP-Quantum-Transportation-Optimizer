@@ -4,8 +4,8 @@
 
 set -e
 
-# Configuration
-RASQBERRY_IP="${1:-192.168.0.108}"
+# Configuration - UPDATE THESE VALUES FOR YOUR RASQBERRY
+RASQBERRY_IP="${1:-YOUR_RASQBERRY_IP}"
 RASQBERRY_USER="${2:-rasqberry}"
 RASQBERRY_HOST="${RASQBERRY_USER}@${RASQBERRY_IP}"
 TARGET_DIR="/home/${RASQBERRY_USER}/RasQberry-Two/examples/quantum_transport_optimizer"
@@ -16,6 +16,14 @@ echo "========================================================================"
 echo "Target: ${RASQBERRY_HOST}"
 echo "Directory: ${TARGET_DIR}"
 echo ""
+
+# Validate IP address is set
+if [ "$RASQBERRY_IP" = "YOUR_RASQBERRY_IP" ]; then
+    echo "ERROR: Please provide your RasQberry IP address"
+    echo "Usage: ./DEPLOY.sh YOUR_RASQBERRY_IP [username]"
+    echo "Example: ./DEPLOY.sh 192.168.1.100 rasqberry"
+    exit 1
+fi
 
 # Create archive
 echo "📦 Creating deployment archive..."
@@ -42,10 +50,10 @@ echo ""
 echo "📂 Extracting files on RasQberry..."
 ssh ${RASQBERRY_HOST} << 'ENDSSH'
     # Create directory
-    mkdir -p /home/rasqberry/RasQberry-Two/examples/quantum_transport_optimizer
+    mkdir -p ${TARGET_DIR}
     
     # Extract archive
-    cd /home/rasqberry/RasQberry-Two/examples/quantum_transport_optimizer
+    cd ${TARGET_DIR}
     tar -xzf /tmp/quantum_transport_optimizer.tar.gz
     
     # Make main.py executable
@@ -62,7 +70,7 @@ echo "✅ Deployment complete!"
 echo ""
 echo "To run the application on RasQberry:"
 echo "  1. SSH to RasQberry: ssh ${RASQBERRY_HOST}"
-echo "  2. Activate venv: source /home/rasqberry/RasQberry-Two/venv/RQB2/bin/activate"
+echo "  2. Activate venv: source /home/${RASQBERRY_USER}/RasQberry-Two/venv/RQB2/bin/activate"
 echo "  3. Navigate: cd ${TARGET_DIR}/src"
 echo "  4. Run demo: python main.py --demo"
 echo ""

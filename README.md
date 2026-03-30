@@ -3,7 +3,7 @@
 
 An educational transport optimization application comparing classical and quantum algorithms for vehicle routing problems. Designed for SAP TM-like data with support for CSV/REST input and touchscreen display on Raspberry Pi.
 
-> **⚠️ Important Note on Quantum Computing**: This project demonstrates quantum algorithms for educational purposes. At the current state of quantum computing technology (NISQ era), **quantum advantage has not been achieved** for optimization problems. Classical algorithms will consistently outperform quantum approaches on available hardware. QAOA is included for research, education, and future readiness.
+> ** Important Note on Quantum Computing**: This project demonstrates quantum algorithms for educational purposes. At the current state of quantum computing technology (NISQ era), **quantum advantage has not been achieved** for optimization problems. Classical algorithms will consistently outperform quantum approaches on available hardware. QAOA is included for research, education, and future readiness.
 
 ## Features
 
@@ -175,49 +175,12 @@ print(f"CO₂ Improvement: {co2_improvement:+.2f}%")
 shipment_id,origin,destination,weight_kg,volume_m3,priority,deadline,value_eur
 SH001,Berlin,Munich,500,2.5,3,2026-01-20T18:00:00,5000
 ```
-
-**Fields**:
-- `shipment_id`: Unique identifier
-- `origin`: Starting location
-- `destination`: Delivery location
-- `weight_kg`: Weight in kilograms
-- `volume_m3`: Volume in cubic meters
-- `priority`: 1-5 (5 is highest)
-- `deadline`: ISO 8601 datetime
-- `value_eur`: Shipment value in EUR
+ 
 
 ### Trucks CSV
 
 ```csv
-truck_id,capacity_weight_kg,capacity_volume_m3,cost_per_km_eur,co2_per_km_kg,location,available
-TR001,1000,5.0,1.2,0.8,Berlin,true
-```
-
-**Fields**:
-- `truck_id`: Unique identifier
-- `capacity_weight_kg`: Maximum weight capacity
-- `capacity_volume_m3`: Maximum volume capacity
-- `cost_per_km_eur`: Operating cost per kilometer
-- `co2_per_km_kg`: CO₂ emissions per kilometer
-- `location`: Current location
-- `available`: true/false availability status
-
-### Lanes CSV
-
-```csv
-lane_id,origin,destination,distance_km,travel_time_hours,toll_cost_eur,traffic_factor
-LN001,Berlin,Munich,584,6.5,45.0,1.0
-```
-
-**Fields**:
-- `lane_id`: Unique identifier
-- `origin`: Starting point
-- `destination`: End point
-- `distance_km`: Distance in kilometers
-- `travel_time_hours`: Expected travel time
-- `toll_cost_eur`: Toll costs
-- `traffic_factor`: Traffic multiplier (1.0 = normal, >1.0 = congested)
-
+truck_
 ## REST API Integration
 
 ### Loading Data from API
@@ -278,180 +241,6 @@ For the official RasQberry touchscreen (7" or 10"):
 | **Greedy** | Local | Any | Very Fast | Good baseline | Yes (estimates) |
 | **QAOA** | Global | <20 vars | Very Slow | Educational | No (research only) |
 
-### Detailed Algorithm Descriptions
-
-#### Exact Solver (NEW)
-- **Search Type**: Exhaustive enumeration
-- **Speed**: Slow (exponential complexity)
-- **Quality**: **Guaranteed optimal solution**
-- **Best for**: Small problems (<12 variables), establishing baseline
-- **Pi Performance**: Works well, 5-30 seconds for 10-12 variables
-- **Limitation**: Only feasible for tiny problems
-
-#### Simulated Annealing (IMPROVED)
-- **Search Type**: Global search with adaptive cooling
-- **Speed**: Fast to moderate (2-5 seconds on Pi)
-- **Quality**: Near-optimal (typically <5% from optimal)
-- **Best for**: **Production use**, medium-sized problems
-- **Pi Optimized**: Default 2000 iterations (adjustable)
-- **Recommendation**: **Primary algorithm for real-world use**
-
-#### Genetic Algorithm (NEW)
-- **Search Type**: Population-based evolutionary search
-- **Speed**: Medium (5-15 seconds on Pi)
-- **Quality**: Near-optimal with good diversity
-- **Best for**: Alternative global search, exploring solution space
-- **Pi Optimized**: Population 50, Generations 100
-- **Recommendation**: Good alternative to Simulated Annealing
-
-#### Greedy Heuristic
-- **Search Type**: Local greedy decisions
-- **Speed**: Very fast (<1 second)
-- **Quality**: Good baseline (10-30% from optimal)
-- **Best for**: Quick estimates, initial solutions, large problems
-- **Pi Performance**: Instant results
-- **Recommendation**: Use for rapid prototyping
-
-#### QAOA (Quantum) - Educational Only
-- **Search Type**: Quantum global search
-- **Speed**: Very slow (30-120 seconds on Pi)
-- **Quality**: Variable (often worse than classical)
-- **Best for**: **Education, research, future readiness**
-- **Pi Performance**: Slow due to simulation overhead
-- **⚠️ Important**: Not recommended for production use
-
-### Current State of Quantum Computing
-
-**Critical Understanding:**
-
-1. **Quantum Advantage Not Achieved**: Current quantum computers (NISQ era) cannot outperform classical algorithms for optimization problems
-2. **Classical Superiority**: Simulated Annealing and Genetic Algorithms will consistently find better solutions faster
-3. **Hardware Limitations**:
-   - Limited qubit count and coherence time
-   - High error rates requiring mitigation
-   - Simulation overhead on classical hardware (like Raspberry Pi)
-4. **Future Outlook**: Quantum advantage expected later this year for specific problem types (likely not routing/optimization)
-5. **Educational Value**: QAOA demonstrates quantum concepts and prepares for future quantum computing
-
-### When to Use Each Algorithm
-
-**For Production/Real-World Use:**
-- ✅ **First Choice**: Simulated Annealing (best balance of speed and quality)
-- ✅ **Alternative**: Genetic Algorithm (good for exploring diverse solutions)
-- ✅ **Quick Estimates**: Greedy Optimizer (instant results)
-- ✅ **Small Problems**: Exact Solver (guaranteed optimal for <12 variables)
-
-**For Research/Education:**
-- 📚 **QAOA**: Understanding quantum algorithms
-- 📚 **Benchmarking**: Comparing classical vs quantum approaches
-- 📚 **Future Readiness**: Preparing for quantum advantage era
-
-**NOT Recommended:**
-- ❌ Using QAOA for production workloads
-- ❌ Claiming quantum superiority with current hardware
-- ❌ Using Exact Solver for problems >15 variables
-
-## Performance Tips
-
-1. **Problem Size**: QAOA works best with < 20 variables (shipments × trucks)
-2. **For Larger Problems**: Use classical algorithms or problem decomposition
-3. **Raspberry Pi Optimization**: Reduce QAOA reps to 2-3 for faster results
-4. **Memory**: Close other applications when running quantum optimization
-
-## Metrics Explained
-
-### Cost Metrics
-- **Transport Cost**: Base cost per km × distance
-- **Fuel Cost**: Based on truck category and distance
-- **Toll Cost**: Highway tolls
-- **Driver Cost**: Time-based driver wages
-- **Maintenance Cost**: Per-km maintenance
-
-### CO₂ Metrics
-- **Direct Emissions**: Based on truck type and load
-- **Fuel Emissions**: Diesel combustion emissions
-- **Traffic Impact**: Increased emissions in congestion
-- **Total CO₂e**: Including other greenhouse gases
-
-## Troubleshooting
-
-### Qiskit Import Errors
-```bash
-pip install --upgrade qiskit qiskit-optimization qiskit-algorithms
-```
-
-### Memory Issues
-- Reduce problem size
-- Use classical algorithms
-- Increase swap space
-
-### No Feasible Solution
-- Check truck capacities
-- Verify lane availability
-- Adjust deadlines
-
-## Examples
-
-See the `examples/` directory for:
-- Basic usage examples
-- API integration examples
-- Custom objective functions
-- Batch processing scripts
-
-## Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new features
-4. Submit a pull request
-
-## License
-
-This project is part of the RasQberry project.
-See the main RasQberry LICENSE file for details.
-
-## Contact
-
-For questions or support:
-- RasQberry GitHub: https://github.com/JanLahmann/RasQberry-Two
-- RasQberry Website: https://rasqberry.org
-
-## Acknowledgments
-
-- Built on Qiskit quantum computing framework
-- Inspired by SAP Transportation Management
-- Part of the RasQberry quantum education project
-
-## Running Comprehensive Benchmarks
-
-The project includes a comprehensive benchmarking suite to fairly compare all algorithms:
-
-```python
-from comparison.benchmark import BenchmarkSuite
-from data_loader.csv_loader import CSVLoader
-
-# Load data
-loader = CSVLoader("../data/input")
-data = loader.load_all()
-
-# Create benchmark suite
-benchmark = BenchmarkSuite(
-    data['shipments'],
-    data['trucks'],
-    data['lanes']
-)
-
-# Run comprehensive comparison
-results = benchmark.run_comprehensive_comparison(
-    include_exact=True,      # Include exact solver if problem is small enough
-    include_quantum=True,    # Include QAOA for comparison
-    objective='balanced'
-)
-
-# Export results
-benchmark.export_results('benchmark_results.json')
-```
 
 This will:
 1. Run all available optimizers on the same problem

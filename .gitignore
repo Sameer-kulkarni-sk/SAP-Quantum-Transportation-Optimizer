@@ -62,3 +62,13 @@ Thumbs.db
 data/output/*.json
 data/output/*.csv
 *.log
+
+# Sensitive deployment files (SSH credentials, IPs, passwords)
+FINAL_DEPLOY.sh
+diagnose_connection.sh
+SSH_CONNECTION_TROUBLESHOOTING.md
+*_credentials.txt
+*_password.txt
+*.pem
+*.key
+id_rsa*
