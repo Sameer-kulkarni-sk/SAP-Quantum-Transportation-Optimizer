@@ -1,0 +1,7 @@
+This is a placeholder for the application icon.
+Please replace this file with an actual PNG icon image (recommended size: 128x128 or 256x256 pixels).
+
+For now, the desktop entry will work without an icon, or you can:
+1. Create/download a quantum-themed icon
+2. Replace this file with icon.png
+3. Redeploy to RasQberry

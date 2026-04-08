@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Quantum Transport Optimizer
+Comment=SAP Quantum Transportation Optimizer
+Exec=/home/rasqberry/RasQberry-Two/venv/RQB2/bin/python /home/rasqberry/RasQberry-Two/examples/quantum_transport_optimizer/src/gui_main.py
+Icon=/home/rasqberry/RasQberry-Two/examples/quantum_transport_optimizer/icon.png
+Terminal=false
+Categories=Science;Education;Quantum;
+StartupNotify=true

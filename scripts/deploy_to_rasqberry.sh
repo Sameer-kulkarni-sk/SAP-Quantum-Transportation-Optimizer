@@ -1,8 +1,17 @@
 #!/bin/bash
 # Deployment script for Quantum Transport Optimizer to RasQberry
-# Usage: ./scripts/deploy_to_rasqberry.sh YOUR_RASQBERRY_IP
+# Usage: ./scripts/deploy_to_rasqberry.sh YOUR_RASQBERRY_IP [PASSWORD]
 
 set -e
+
+# Check if sshpass is installed
+if ! command -v sshpass &> /dev/null; then
+    echo "Error: sshpass is not installed"
+    echo "Please install it first:"
+    echo "  macOS: brew install hudochenkov/sshpass/sshpass"
+    echo "  Linux: sudo apt-get install sshpass"
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -14,14 +23,22 @@ NC='\033[0m' # No Color
 # Check if IP address is provided
 if [ -z "$1" ]; then
     echo -e "${RED}Error: RasQberry IP address required${NC}"
-    echo "Usage: ./scripts/deploy_to_rasqberry.sh YOUR_RASQBERRY_IP"
-    echo "Example: ./scripts/deploy_to_rasqberry.sh 192.168.1.100"
+    echo "Usage: ./scripts/deploy_to_rasqberry.sh YOUR_RASQBERRY_IP [PASSWORD]"
+    echo "Example: ./scripts/deploy_to_rasqberry.sh 192.168.1.100 mypassword"
     exit 1
 fi
 
 RASQBERRY_IP="$1"
-RASQBERRY_USER="${2:-rasqberry}"
+RASQBERRY_PASSWORD="${2}"
+RASQBERRY_USER="rasqberry"
 RASQBERRY_HOST="${RASQBERRY_USER}@${RASQBERRY_IP}"
+
+# Prompt for password if not provided
+if [ -z "$RASQBERRY_PASSWORD" ]; then
+    echo -e "${YELLOW}Enter RasQberry password:${NC}"
+    read -s RASQBERRY_PASSWORD
+    echo ""
+fi
 APP_DIR="/home/${RASQBERRY_USER}/RasQberry-Two/examples/quantum_transport_optimizer"
 VENV_PATH="/home/${RASQBERRY_USER}/RasQberry-Two/venv/RQB2"
 
@@ -49,14 +66,13 @@ echo ""
 
 # Step 2: Transfer files
 echo -e "${BLUE}[2/5] Transferring files to RasQberry...${NC}"
-echo -e "${YELLOW}You will be prompted for your RasQberry password${NC}"
-scp /tmp/quantum_transport_optimizer.tar.gz ${RASQBERRY_HOST}:/tmp/
+sshpass -p "${RASQBERRY_PASSWORD}" scp -o StrictHostKeyChecking=no /tmp/quantum_transport_optimizer.tar.gz ${RASQBERRY_HOST}:/tmp/
 echo -e "${GREEN}✓ Files transferred${NC}"
 echo ""
 
 # Step 3: Deploy on RasQberry
 echo -e "${BLUE}[3/5] Deploying on RasQberry...${NC}"
-ssh -t ${RASQBERRY_HOST} << ENDSSH
+sshpass -p "${RASQBERRY_PASSWORD}" ssh -o StrictHostKeyChecking=no -t ${RASQBERRY_HOST} << ENDSSH
     set -e
     echo "Creating application directory..."
     mkdir -p ${APP_DIR}
@@ -69,17 +85,23 @@ ssh -t ${RASQBERRY_HOST} << ENDSSH
     chmod +x src/main.py src/gui_main.py 2>/dev/null || true
     chmod +x scripts/*.sh 2>/dev/null || true
     
+    echo "Installing desktop icon..."
+    mkdir -p /home/${RASQBERRY_USER}/Desktop
+    cp quantum_transport_optimizer.desktop /home/${RASQBERRY_USER}/Desktop/
+    chmod +x /home/${RASQBERRY_USER}/Desktop/quantum_transport_optimizer.desktop
+    
     echo "Cleaning up..."
     rm /tmp/quantum_transport_optimizer.tar.gz
     
     echo "✓ Deployment complete"
+    echo "✓ Desktop icon installed"
 ENDSSH
 echo -e "${GREEN}✓ Deployed successfully${NC}"
 echo ""
 
 # Step 4: Install dependencies
 echo -e "${BLUE}[4/5] Installing dependencies...${NC}"
-ssh -t ${RASQBERRY_HOST} << ENDSSH
+sshpass -p "${RASQBERRY_PASSWORD}" ssh -o StrictHostKeyChecking=no -t ${RASQBERRY_HOST} << ENDSSH
     set -e
     source ${VENV_PATH}/bin/activate
     cd ${APP_DIR}
@@ -96,7 +118,7 @@ echo ""
 # Step 5: Run demo
 echo -e "${BLUE}[5/5] Running demo...${NC}"
 echo ""
-ssh -t ${RASQBERRY_HOST} << ENDSSH
+sshpass -p "${RASQBERRY_PASSWORD}" ssh -o StrictHostKeyChecking=no -t ${RASQBERRY_HOST} << ENDSSH
     source ${VENV_PATH}/bin/activate
     cd ${APP_DIR}/src
     python main.py --demo

@@ -37,6 +37,27 @@ An educational transport optimization application comparing classical and quantu
 
 ## Installation
 
+### Prerequisites
+- Python 3.8+
+- RasQberry device (optional, for deployment)
+- `sshpass` for deployment (macOS: `brew install hudochenkov/sshpass/sshpass`)
+
+### Local Installation
+```bash
+pip install -r requirements.txt
+```
+
+### Deploy to RasQberry
+```bash
+# Deploy with password authentication
+./scripts/deploy_to_rasqberry.sh YOUR_RASQBERRY_IP [PASSWORD]
+
+# Or use the simpler script
+./DEPLOY.sh YOUR_RASQBERRY_IP [PASSWORD]
+```
+
+After deployment, a desktop icon will be automatically created on the RasQberry device for easy access to the GUI application.
+
 ## Quick Start
 
 ### 1. Run with Sample Data
