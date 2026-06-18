@@ -1,273 +1,283 @@
-"""QUBO formulation for transport optimization problem"""
+"""
+QUBO formulation for transport assignment.
+
+Converts the shipment→truck assignment problem into a
+Quadratic Unconstrained Binary Optimization (QUBO) and then into
+the Pauli-Z Ising Hamiltonian required by QAOAAnsatz.
+
+No qiskit-optimization dependency — uses only core Qiskit 2.x.
+"""
 
 from models.lane import Lane
 from models.truck import Truck
 from models.shipment import Shipment
-import numpy as np
-import sys
-from pathlib import Path
-from typing import List, Dict, Tuple
-from qiskit_optimization import QuadraticProgram
-from qiskit_optimization.converters import QuadraticProgramToQubo
 
-# Add parent directories to path for imports
+import sys
+import numpy as np
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+try:
+    from qiskit.quantum_info import SparsePauliOp
+    QISKIT_AVAILABLE = True
+except ImportError:
+    QISKIT_AVAILABLE = False
 
 
 class QUBOFormulation:
     """
-    QUBO formulation for vehicle routing problem
+    Build a QUBO for the transport assignment problem.
 
-    Decision variables:
-    - x[i,j]: Binary variable (1 if shipment i assigned to truck j)
+    Decision variable:  x[i, j] = 1 if shipment i is assigned to truck j.
 
-    Objective:
-    - Minimize: α*Cost + β*CO₂ + penalties for constraint violations
+    Objective (minimise):
+        alpha * sum_ij  cost(i,j)  * x[i,j]
+        + beta  * sum_ij  co2(i,j)   * x[i,j]
+
+    Constraints (added as quadratic penalties):
+        [A]  Each shipment assigned at most once:  sum_j x[i,j] <= 1
+        [B]  Truck weight capacity not exceeded
+        [C]  Truck volume capacity not exceeded
+
+    The QUBO matrix Q is defined so that  x^T Q x  is minimised.
     """
+
+    DEFAULT_WEIGHTS = {
+        'cost':             1.0,
+        'co2':              0.01,
+        'assign_penalty':   5.0,   # each double-assignment
+        'capacity_penalty': 3.0,   # each kg / m3 over capacity (scaled)
+    }
 
     def __init__(self,
                  shipments: List[Shipment],
                  trucks: List[Truck],
                  lanes: List[Lane],
-                 weights: Dict[str, float] = None):
-        """
-        Initialize QUBO formulation
-
-        Args:
-            shipments: List of shipments
-            trucks: List of trucks
-            lanes: List of lanes
-            weights: Dictionary of weights for objective and penalties
-        """
+                 weights: Optional[Dict[str, float]] = None):
         self.shipments = shipments
         self.trucks = trucks
         self.lanes = lanes
+        self.weights = {**self.DEFAULT_WEIGHTS, **(weights or {})}
 
-        # Default weights - balanced for QAOA
-        # Typical assignment cost is ~700-1000, so penalties should be comparable
-        self.weights = weights or {
-            'cost': 1.0,           # Cost weight
-            'co2': 0.01,           # CO₂ weight (scaled down)
-            # Assignment constraint penalty (must be high)
-            'assignment': 2000.0,
-            # Capacity constraint penalty (hard constraint)
-            'capacity': 5000.0,
-            'deadline': 1000.0,    # Deadline constraint penalty
-            # Availability constraint penalty (hard constraint)
-            'available': 10000.0
-        }
+        # Pre-compute best lane cost/co2 for each (shipment, truck) pair
+        self._lane_cache: Dict[Tuple[int, int], Tuple[float, float]] = {}
+        self._build_lane_cache()
 
-        # Build lane lookup for efficient access
-        self._build_lane_lookup()
+        # n = number of binary variables  (shipment_i × truck_j)
+        self.n_vars = len(shipments) * len(trucks)
 
-    def _build_lane_lookup(self):
-        """Build lookup dictionary for lanes by route"""
-        self.lane_lookup = {}
-        for lane in self.lanes:
-            key = (lane.origin.lower(), lane.destination.lower())
-            if key not in self.lane_lookup:
-                self.lane_lookup[key] = []
-            self.lane_lookup[key].append(lane)
+    # ------------------------------------------------------------------ #
+    #  Public API                                                           #
+    # ------------------------------------------------------------------ #
 
-    def get_best_lane(self, origin: str, destination: str) -> Lane:
-        """Get best (shortest) lane for a route"""
-        key = (origin.lower(), destination.lower())
-        lanes = self.lane_lookup.get(key, [])
-        if not lanes:
-            return None
-        # Return lane with minimum effective distance
-        return min(lanes, key=lambda l: l.effective_distance())
+    def build_qubo_matrix(self) -> np.ndarray:
+        """Return the (n×n) upper-triangular QUBO matrix Q."""
+        n = self.n_vars
+        Q = np.zeros((n, n))
 
-    def create_qubo(self) -> QuadraticProgram:
+        ns = len(self.shipments)
+        nt = len(self.trucks)
+
+        alpha = self.weights['cost']
+        beta  = self.weights['co2']
+        P_a   = self.weights['assign_penalty']
+        P_c   = self.weights['capacity_penalty']
+
+        # --- linear terms: objective cost ---
+        for i, ship in enumerate(self.shipments):
+            for j, truck in enumerate(self.trucks):
+                idx = i * nt + j
+                cost, co2 = self._lane_cache.get((i, j), (0.0, 0.0))
+                # Normalise so coefficients are O(1)
+                Q[idx, idx] += alpha * cost / 1000.0 + beta * co2
+
+        # --- quadratic penalty [A]: at most one truck per shipment ---
+        for i in range(ns):
+            for j1 in range(nt):
+                for j2 in range(j1 + 1, nt):
+                    idx1 = i * nt + j1
+                    idx2 = i * nt + j2
+                    Q[idx1, idx2] += P_a
+
+        # --- quadratic penalty [B/C]: truck capacity ---
+        for j, truck in enumerate(self.trucks):
+            max_w = truck.capacity_weight_kg
+            max_v = truck.capacity_volume_m3
+            for i1, s1 in enumerate(self.shipments):
+                for i2 in range(i1 + 1, ns):
+                    s2 = self.shipments[i2]
+                    idx1 = i1 * nt + j
+                    idx2 = i2 * nt + j
+                    # weight overflow contribution
+                    w_scale = (s1.weight_kg * s2.weight_kg) / (max_w ** 2)
+                    v_scale = (s1.volume_m3 * s2.volume_m3) / (max_v ** 2)
+                    Q[idx1, idx2] += P_c * (w_scale + v_scale)
+
+        return Q
+
+    def qubo_to_ising(self) -> Tuple[np.ndarray, float]:
         """
-        Create QUBO formulation of the problem
+        Convert QUBO  x^T Q x  →  Ising  Σ h_i Z_i + Σ J_ij Z_i Z_j + offset.
+
+        Uses substitution  x_k = (1 - Z_k) / 2.
 
         Returns:
-            QuadraticProgram object
+            h      : 1-D array of single-qubit Z fields
+            J      : 2-D symmetric matrix of ZZ couplings
+            offset : constant energy offset
         """
-        qp = QuadraticProgram('transport_optimization')
+        Q = self.build_qubo_matrix()
+        n = Q.shape[0]
+        h = np.zeros(n)
+        J = np.zeros((n, n))
+        offset = 0.0
 
-        n_shipments = len(self.shipments)
-        n_trucks = len(self.trucks)
+        for i in range(n):
+            for j in range(i, n):
+                if i == j:
+                    # x_i = (1-Z_i)/2  →  Q_ii * x_i contributes:
+                    # Q_ii/4 - Q_ii/4 * Z_i  (and constant Q_ii/4)
+                    h[i] -= Q[i, i] / 4.0
+                    offset += Q[i, i] / 4.0
+                else:
+                    # Q_ij * x_i * x_j  where Q is upper-triangular (Q[i,j] = Q[j,i]/2 each)
+                    qij = Q[i, j]
+                    J[i, j] += qij / 4.0
+                    J[j, i] += qij / 4.0
+                    h[i] -= qij / 4.0
+                    h[j] -= qij / 4.0
+                    offset += qij / 4.0
 
-        # Add binary variables for shipment-truck assignments
-        # x[i,j] = 1 if shipment i is assigned to truck j
-        for i in range(n_shipments):
-            for j in range(n_trucks):
-                qp.binary_var(f'x_{i}_{j}')
+        return h, J, offset
 
-        # Build objective function
-        linear = {}
-        quadratic = {}
-
-        # Add cost and CO₂ terms
-        self._add_objective_terms(linear, quadratic)
-
-        # Add constraint penalties
-        self._add_assignment_penalty(linear, quadratic)
-        self._add_capacity_penalty(linear, quadratic)
-        self._add_deadline_penalty(linear, quadratic)
-        self._add_availability_penalty(linear, quadratic)
-
-        # Set objective to minimize
-        qp.minimize(linear=linear, quadratic=quadratic)
-
-        return qp
-
-    def _add_objective_terms(self, linear: Dict, quadratic: Dict):
-        """Add cost and CO₂ objective terms"""
-        for i, shipment in enumerate(self.shipments):
-            # Find best lane for this shipment's route
-            lane = self.get_best_lane(shipment.origin, shipment.destination)
-
-            if lane is None:
-                # No lane available - add high penalty
-                for j in range(len(self.trucks)):
-                    var = f'x_{i}_{j}'
-                    linear[var] = linear.get(var, 0) + 10000.0
-                continue
-
-            for j, truck in enumerate(self.trucks):
-                var = f'x_{i}_{j}'
-
-                # Calculate cost for this assignment
-                cost = (self.weights['cost'] *
-                        truck.cost_per_km_eur * lane.distance_km * lane.traffic_factor)
-
-                # Calculate CO₂ for this assignment
-                co2 = (self.weights['co2'] *
-                       truck.co2_per_km_kg * lane.distance_km * lane.traffic_factor)
-
-                # Add to linear terms
-                linear[var] = linear.get(var, 0) + cost + co2
-
-    def _add_assignment_penalty(self, linear: Dict, quadratic: Dict):
+    def build_cost_operator(self) -> "SparsePauliOp":
         """
-        Add penalty for assignment constraint
-        Each shipment must be assigned to exactly one truck
-        Penalty: λ * Σ(i) (1 - Σ(j) x[i,j])²
-        Expanded: λ * (1 - 2*Σx + Σx²+ 2*ΣΣx*x)
+        Build the Qiskit SparsePauliOp cost Hamiltonian for QAOAAnsatz.
+
+        H_C = Σ_i h_i Z_i  +  Σ_{i<j} J_ij Z_i Z_j
+
+        Qubit ordering: qubit 0 = variable 0, …, qubit n-1 = variable n-1.
+        (Qiskit's Pauli strings are written right-to-left, so qubit k maps
+         to position n-1-k in the string.)
         """
-        lambda_assign = self.weights['assignment']
+        if not QISKIT_AVAILABLE:
+            raise ImportError("qiskit is required for build_cost_operator()")
 
-        for i in range(len(self.shipments)):
-            # Constant term λ is added to objective (not needed in variables)
+        h, J, _ = self.qubo_to_ising()
+        n = len(h)
 
-            # Linear term: -2λ * Σ(j) x[i,j] + λ (from x² expansion)
-            for j in range(len(self.trucks)):
-                var = f'x_{i}_{j}'
-                # -2λ from expansion, +λ from x²=x for binary
-                linear[var] = linear.get(var, 0) - lambda_assign
+        pauli_list = []
 
-            # Quadratic term: 2λ * Σ(j<k) x[i,j] * x[i,k]
-            for j in range(len(self.trucks)):
-                for k in range(j+1, len(self.trucks)):
-                    var_j = f'x_{i}_{j}'
-                    var_k = f'x_{i}_{k}'
-                    key = (var_j, var_k)
-                    quadratic[key] = quadratic.get(key, 0) + 2 * lambda_assign
+        # Single-qubit Z terms
+        for i in range(n):
+            if abs(h[i]) > 1e-9:
+                label = ['I'] * n
+                label[n - 1 - i] = 'Z'
+                pauli_list.append((''.join(label), h[i]))
 
-    def _add_capacity_penalty(self, linear: Dict, quadratic: Dict):
+        # Two-qubit ZZ terms
+        for i in range(n):
+            for j in range(i + 1, n):
+                if abs(J[i, j]) > 1e-9:
+                    label = ['I'] * n
+                    label[n - 1 - i] = 'Z'
+                    label[n - 1 - j] = 'Z'
+                    pauli_list.append((''.join(label), J[i, j]))
+
+        if not pauli_list:
+            # Identity with zero weight as fallback
+            pauli_list = [('I' * n, 0.0)]
+
+        return SparsePauliOp.from_list(pauli_list)
+
+    def decode_solution(self, bitstring: str) -> List[Dict]:
         """
-        Add penalty for capacity constraints
-        Truck capacity must not be exceeded
-        """
-        lambda_cap = self.weights['capacity']
-
-        for j, truck in enumerate(self.trucks):
-            # Weight capacity penalty
-            for i, shipment in enumerate(self.shipments):
-                if shipment.weight_kg > truck.capacity_weight_kg:
-                    # This assignment would violate capacity
-                    var = f'x_{i}_{j}'
-                    penalty = lambda_cap * \
-                        (shipment.weight_kg / truck.capacity_weight_kg)
-                    linear[var] = linear.get(var, 0) + penalty
-
-            # Volume capacity penalty
-            for i, shipment in enumerate(self.shipments):
-                if shipment.volume_m3 > truck.capacity_volume_m3:
-                    # This assignment would violate capacity
-                    var = f'x_{i}_{j}'
-                    penalty = lambda_cap * \
-                        (shipment.volume_m3 / truck.capacity_volume_m3)
-                    linear[var] = linear.get(var, 0) + penalty
-
-    def _add_deadline_penalty(self, linear: Dict, quadratic: Dict):
-        """
-        Add penalty for deadline constraints
-        Deliveries should meet deadlines
-        """
-        lambda_deadline = self.weights['deadline']
-
-        for i, shipment in enumerate(self.shipments):
-            lane = self.get_best_lane(shipment.origin, shipment.destination)
-
-            if lane is None:
-                continue
-
-            # Check if deadline can be met
-            if shipment.is_overdue():
-                # Already overdue - high penalty
-                for j in range(len(self.trucks)):
-                    var = f'x_{i}_{j}'
-                    linear[var] = linear.get(var, 0) + lambda_deadline * 10
-
-    def _add_availability_penalty(self, linear: Dict, quadratic: Dict):
-        """
-        Add penalty for using unavailable trucks
-        """
-        lambda_avail = self.weights['available']
-
-        for j, truck in enumerate(self.trucks):
-            if not truck.available:
-                # Add high penalty for using this truck
-                for i in range(len(self.shipments)):
-                    var = f'x_{i}_{j}'
-                    linear[var] = linear.get(var, 0) + lambda_avail
-
-    def decode_solution(self, result: Dict[str, int]) -> List[Dict]:
-        """
-        Decode QAOA result into truck assignments
+        Decode a measurement bitstring into transport assignments.
 
         Args:
-            result: Dictionary mapping variable names to binary values
+            bitstring: binary string of length n_vars (MSB = qubit n-1).
+                       Qiskit orders results as qubit 0 = rightmost char.
 
         Returns:
-            List of assignment dictionaries
+            list of assignment dicts compatible with OptimizationResult.
         """
+        nt = len(self.trucks)
+        ns = len(self.shipments)
+
+        # Reverse so that index k maps to bit position k from the right
+        bits = bitstring[::-1]
+
         assignments = []
+        assigned_shipments = set()
+        truck_loads: Dict[str, Dict[str, float]] = {
+            t.truck_id: {'weight': 0.0, 'volume': 0.0}
+            for t in self.trucks
+        }
 
-        for i, shipment in enumerate(self.shipments):
+        for i, ship in enumerate(self.shipments):
             for j, truck in enumerate(self.trucks):
-                var_name = f'x_{i}_{j}'
+                idx = i * nt + j
+                if idx >= len(bits):
+                    continue
+                if bits[idx] == '1':
+                    if ship.shipment_id in assigned_shipments:
+                        continue  # skip double-assignment
 
-                if result.get(var_name, 0) == 1:
-                    # This shipment is assigned to this truck
-                    lane = self.get_best_lane(
-                        shipment.origin, shipment.destination)
+                    tl = truck_loads[truck.truck_id]
+                    if (tl['weight'] + ship.weight_kg > truck.capacity_weight_kg or
+                            tl['volume'] + ship.volume_m3 > truck.capacity_volume_m3):
+                        continue  # capacity violated
 
-                    if lane:
-                        cost = truck.cost_per_km_eur * lane.distance_km * lane.traffic_factor
-                        co2 = truck.co2_per_km_kg * lane.distance_km * lane.traffic_factor
+                    # Find best lane for this pair
+                    lanes = self._get_matching_lanes(ship)
+                    if not lanes:
+                        continue
+                    best_lane = min(lanes, key=lambda l: l.total_cost(truck.cost_per_km_eur))
 
-                        assignments.append({
-                            'shipment': shipment,
-                            'truck': truck,
-                            'lane': lane,
-                            'cost': cost,
-                            'co2': co2
-                        })
+                    cost = best_lane.total_cost(truck.cost_per_km_eur)
+                    co2  = best_lane.total_co2(truck.co2_per_km_kg)
+
+                    assignments.append({
+                        'shipment': ship,
+                        'truck':    truck,
+                        'lane':     best_lane,
+                        'cost':     cost,
+                        'co2':      co2,
+                    })
+                    assigned_shipments.add(ship.shipment_id)
+                    tl['weight'] += ship.weight_kg
+                    tl['volume'] += ship.volume_m3
 
         return assignments
 
     def get_problem_size(self) -> Tuple[int, int]:
-        """
-        Get problem size
-
-        Returns:
-            Tuple of (number of variables, number of constraints)
-        """
-        n_vars = len(self.shipments) * len(self.trucks)
-        n_constraints = len(self.shipments)  # Assignment constraints
+        """Return (n_variables, n_constraints)."""
+        n_vars = self.n_vars
+        n_constraints = len(self.shipments) + len(self.trucks) * 2
         return n_vars, n_constraints
+
+    # ------------------------------------------------------------------ #
+    #  Private helpers                                                      #
+    # ------------------------------------------------------------------ #
+
+    def _build_lane_cache(self):
+        for i, ship in enumerate(self.shipments):
+            lanes = self._get_matching_lanes(ship)
+            for j, truck in enumerate(self.trucks):
+                if lanes:
+                    best = min(lanes, key=lambda l: l.total_cost(truck.cost_per_km_eur))
+                    self._lane_cache[(i, j)] = (
+                        best.total_cost(truck.cost_per_km_eur),
+                        best.total_co2(truck.co2_per_km_kg),
+                    )
+                else:
+                    self._lane_cache[(i, j)] = (0.0, 0.0)
+
+    def _get_matching_lanes(self, shipment: Shipment) -> List[Lane]:
+        return [
+            l for l in self.lanes
+            if l.origin.lower() == shipment.origin.lower()
+            and l.destination.lower() == shipment.destination.lower()
+        ]

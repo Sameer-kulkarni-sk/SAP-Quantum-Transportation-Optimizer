@@ -1,603 +1,729 @@
 #!/usr/bin/env python3
 """
-SAP Quantum Transport Optimizer - Professional SAP-Themed GUI
-Optimized for Raspberry Pi Touch Display with SAP Fiori Design Language
+SAP Quantum Transport Optimizer
+SAP Fiori Design Language — Shell Bar · Left Nav · KPI Tiles · Log Panel
 """
 
-from optimizers.classical.local_search import LocalSearchOptimizer
-from optimizers.classical.greedy_optimizer import GreedyOptimizer
-from data_loader.csv_loader import CSVLoader
 import sys
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 from pathlib import Path
 import threading
 from datetime import datetime
+
 from PIL import Image, ImageTk
 
-# Add current directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Try to import quantum optimizer
+from optimizers.classical.local_search import LocalSearchOptimizer
+from optimizers.classical.greedy_optimizer import GreedyOptimizer
+from data_loader.csv_loader import CSVLoader
+
 try:
-    from optimizers.quantum.qaoa_optimizer import QAOAOptimizer
-    QUANTUM_AVAILABLE = True
+    from optimizers.quantum.qaoa_optimizer import QAOAOptimizer, QISKIT_AVAILABLE
+    QUANTUM_AVAILABLE = QISKIT_AVAILABLE
 except ImportError:
     QUANTUM_AVAILABLE = False
 
+# ── SAP Fiori color tokens ────────────────────────────────────────────────────
+C = {
+    'shell_bg':      '#003366',   # Shell / top nav bar
+    'shell_text':    '#FFFFFF',
+    'page_bg':       '#F5F6F7',   # Application background
+    'panel_bg':      '#FFFFFF',   # Cards and panels
+    'primary':       '#0070F2',   # SAP brand blue (emphasized actions)
+    'primary_hover': '#0064D9',
+    'primary_press': '#003B77',
+    'nav_hover':     '#EBF5FE',   # Nav item hover
+    'nav_active_bg': '#EBF5FE',   # Nav item selected background
+    'nav_active_bar':'#0070F2',   # Left accent bar on active nav item
+    'text_primary':  '#32363A',   # Primary text
+    'text_secondary':'#6A6D70',   # Secondary / label text
+    'border':        '#D9D9D9',   # Dividers and borders
+    'success':       '#107E3E',
+    'warning':       '#E9730C',
+    'error':         '#BB0000',
+    'quantum':       '#F0AB00',   # Gold accent for quantum
+    'tile_cost':     '#0070F2',   # KPI tile accent — cost
+    'tile_co2':      '#107E3E',   # KPI tile accent — CO2
+    'tile_assigned': '#E9730C',   # KPI tile accent — assigned
+    'tile_time':     '#8B49C9',   # KPI tile accent — time
+    'log_bg':        '#FAFAFA',
+    'log_hdr':       '#003366',
+    'log_info':      '#0070F2',
+    'log_ok':        '#107E3E',
+    'log_warn':      '#E9730C',
+    'log_sep':       '#6A6D70',
+}
 
-class SAPQuantumTransportGUI:
-    """Professional SAP-Themed GUI Application"""
+FONT_SANS  = 'Helvetica Neue'   # macOS; falls back to Arial on other platforms
+FONT_MONO  = 'Menlo'            # macOS monospace; Consolas on Windows
 
-    def __init__(self, root):
-        self.root = root
-        self.root.title("SAP Quantum Transport Optimizer")
 
-        # Configure for touchscreen
-        self.root.geometry("1024x600")
+def _font(family, size, weight='normal'):
+    return (family, size, weight)
 
-        # SAP Fiori Color Palette
-        self.colors = {
-            'sap_blue': '#0070F2',  # SAP Blue (Primary)
-            'sky_blue': '#74B3F7',  # Sky Blue (Light)
-            'white': '#FFFFFF',
-            'light_blue': '#E8F4FD',  # Very light blue background
-            'dark_blue': '#003366',  # Dark blue for text
-            'sap_gold': '#F0AB00',  # SAP Gold accent
-            'success_green': '#107E3E',
-            'text_dark': '#32363A',
-            'border_gray': '#D9D9D9',
-            'hover_blue': '#0064D9'
-        }
 
-        # Data storage
-        self.data = None
-        self.results = []
-        self.current_algorithm = None
+class SAPShell:
+    """Top shell bar: logo · title · clock · quantum badge."""
 
-        # Configure root background
-        self.root.configure(bg=self.colors['white'])
+    HEIGHT = 56
 
-        # Setup styles
-        self.setup_styles()
+    def __init__(self, parent, logo_path):
+        self.bar = tk.Frame(parent, bg=C['shell_bg'], height=self.HEIGHT)
+        self.bar.pack(fill=tk.X)
+        self.bar.pack_propagate(False)
 
-        # Create main UI
-        self.create_widgets()
+        inner = tk.Frame(self.bar, bg=C['shell_bg'])
+        inner.pack(fill=tk.BOTH, expand=True, padx=16, pady=0)
 
-        # Bind keys
-        self.root.bind('<Escape>', lambda e: self.root.quit())
-        self.root.bind('<F1>', lambda e: self.show_help())
-        self.root.bind('<F5>', lambda e: self.load_data())
+        # ── Logo ──────────────────────────────────────────────────────────
+        logo_cell = tk.Frame(inner, bg=C['shell_bg'])
+        logo_cell.pack(side=tk.LEFT, padx=(0, 12))
+        self._load_logo(logo_cell, logo_path)
 
-    def setup_styles(self):
-        """Setup SAP Fiori-inspired styles"""
-        style = ttk.Style()
-        style.theme_use('clam')
+        # Vertical separator
+        tk.Frame(inner, bg='#336699', width=1).pack(
+            side=tk.LEFT, fill=tk.Y, pady=14, padx=(0, 14))
 
-        # Configure button styles
-        style.configure('SAP.TButton',
-                        font=('Segoe UI', 12, 'bold'),
-                        padding=12,
-                        background=self.colors['sap_blue'],
-                        foreground=self.colors['white'],
-                        borderwidth=0)
+        # ── App title ────────────────────────────────────────────────────
+        title_cell = tk.Frame(inner, bg=C['shell_bg'])
+        title_cell.pack(side=tk.LEFT, fill=tk.Y)
+        tk.Label(title_cell, text="Quantum Transport Optimizer",
+                 font=_font(FONT_SANS, 15, 'bold'),
+                 bg=C['shell_bg'], fg=C['shell_text'],
+                 anchor=tk.W).pack(anchor=tk.W, pady=(14, 0))
+        tk.Label(title_cell, text="SAP · Powered by Qiskit 2.x + AerSimulator",
+                 font=_font(FONT_SANS, 9),
+                 bg=C['shell_bg'], fg='#A0B8D0',
+                 anchor=tk.W).pack(anchor=tk.W)
 
-        style.map('SAP.TButton',
-                  background=[('active', self.colors['hover_blue']),
-                              ('pressed', self.colors['dark_blue'])])
+        # ── Right cluster ────────────────────────────────────────────────
+        right = tk.Frame(inner, bg=C['shell_bg'])
+        right.pack(side=tk.RIGHT, fill=tk.Y)
 
-    def create_widgets(self):
-        """Create professional SAP-themed UI"""
-        # Header
-        self.create_header()
+        # Quantum badge
+        badge_bg = C['quantum'] if QUANTUM_AVAILABLE else '#6A6D70'
+        badge_text = '⚛  Quantum Ready' if QUANTUM_AVAILABLE else '  Classical Mode'
+        badge = tk.Label(right, text=badge_text,
+                         font=_font(FONT_SANS, 9, 'bold'),
+                         bg=badge_bg, fg='#1A1A1A' if QUANTUM_AVAILABLE else '#FFFFFF',
+                         padx=10, pady=3, relief=tk.FLAT)
+        badge.pack(side=tk.RIGHT, padx=(8, 0), pady=16)
 
-        # Main content area
-        self.create_main_area()
+        # Clock
+        self._clock = tk.Label(right,
+                               text=datetime.now().strftime('%H:%M:%S'),
+                               font=_font(FONT_SANS, 13, 'bold'),
+                               bg=C['shell_bg'], fg=C['shell_text'])
+        self._clock.pack(side=tk.RIGHT, padx=12, pady=16)
+        self._tick()
 
-        # Footer
-        self.create_footer()
+    def _load_logo(self, cell, logo_path):
+        loaded = False
+        if logo_path:
+            try:
+                img = Image.open(logo_path).convert('RGBA')
 
-    def create_header(self):
-        """Create professional SAP header with logo"""
-        header_frame = tk.Frame(
-            self.root,
-            bg=self.colors['sap_blue'],
-            height=140
-        )
-        header_frame.pack(fill=tk.X, padx=0, pady=0)
-        header_frame.pack_propagate(False)
+                # Fit into shell bar height: max 160 wide × 38 tall
+                img.thumbnail((160, 38), Image.Resampling.LANCZOS)
 
-        # Left side - SAP Logo
-        logo_frame = tk.Frame(header_frame, bg=self.colors['sap_blue'])
-        logo_frame.pack(side=tk.LEFT, padx=30, pady=15)
+                # Composite onto shell-bar background colour to eliminate
+                # any transparent halo
+                shell_r = int(C['shell_bg'][1:3], 16)
+                shell_g = int(C['shell_bg'][3:5], 16)
+                shell_b = int(C['shell_bg'][5:7], 16)
+                bg = Image.new('RGBA', img.size, (shell_r, shell_g, shell_b, 255))
+                bg.paste(img, mask=img.split()[3])   # use alpha channel as mask
+                final = bg.convert('RGB')
 
-        try:
-            # Try to load SAP Technology Partner logo first, then fallback to sap_logo.png
-            logo_paths = [
-                Path(__file__).parent.parent / "351288.png",
-                Path(__file__).parent.parent /
-                "sap_technology_partner_logo.png",
-                Path(__file__).parent.parent / "sap_logo.png"
-            ]
+                self._logo_img = ImageTk.PhotoImage(final)
+                tk.Label(cell, image=self._logo_img,
+                         bg=C['shell_bg']).pack(pady=9)
+                loaded = True
+            except Exception:
+                pass
 
-            logo_loaded = False
-            for logo_path in logo_paths:
-                if logo_path.exists():
-                    logo_img = Image.open(logo_path)
-                    # Make logo BIGGER - resize to larger dimensions
-                    logo_img.thumbnail((300, 100), Image.Resampling.LANCZOS)
-                    self.logo_photo = ImageTk.PhotoImage(logo_img)
-                    logo_label = tk.Label(logo_frame, image=self.logo_photo,
-                                          bg=self.colors['sap_blue'])
-                    logo_label.pack()
-                    logo_loaded = True
-                    break
+        if not loaded:
+            tk.Label(cell, text='SAP',
+                     font=_font(FONT_SANS, 20, 'bold'),
+                     bg=C['shell_bg'], fg=C['shell_text']).pack(pady=10)
 
-            if not logo_loaded:
-                raise FileNotFoundError("Logo not found")
-        except Exception as e:
-            # Fallback: Create SAP text logo
-            sap_label = tk.Label(logo_frame,
-                                 text="SAP",
-                                 font=('Arial Black', 32, 'bold'),
-                                 bg=self.colors['sap_blue'],
-                                 fg=self.colors['white'])
-            sap_label.pack()
+    def _tick(self):
+        self._clock.config(text=datetime.now().strftime('%H:%M:%S'))
+        self._clock.after(1000, self._tick)
 
-        # Center - Title
-        title_frame = tk.Frame(header_frame, bg=self.colors['sap_blue'])
-        title_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=15)
 
-        title_label = tk.Label(title_frame,
-                               text="Quantum Transport Optimizer",
-                               font=('Segoe UI', 24, 'bold'),
-                               bg=self.colors['sap_blue'],
-                               fg=self.colors['white'])
-        title_label.pack(anchor=tk.W, padx=20)
+class NavItem:
+    """Single navigation list item with active / hover state."""
 
-        subtitle_label = tk.Label(title_frame,
-                                  text="Powered by Qiskit • RasQberry Edition",
-                                  font=('Segoe UI', 10),
-                                  bg=self.colors['sap_blue'],
-                                  fg=self.colors['sky_blue'])
-        subtitle_label.pack(anchor=tk.W, padx=20)
+    H = 36
 
-        # Right side - Status
-        status_frame = tk.Frame(header_frame, bg=self.colors['sap_blue'])
-        status_frame.pack(side=tk.RIGHT, padx=30, pady=15)
+    def __init__(self, parent, label, icon, command, section_head=False):
+        self.command = command
+        self.active  = False
+        self.section = section_head
 
-        self.time_label = tk.Label(status_frame,
-                                   text=datetime.now().strftime("%H:%M:%S"),
-                                   font=('Segoe UI', 16, 'bold'),
-                                   bg=self.colors['sap_blue'],
-                                   fg=self.colors['white'])
-        self.time_label.pack()
+        if section_head:
+            self.frame = tk.Frame(parent, bg=C['panel_bg'])
+            self.frame.pack(fill=tk.X, pady=(10, 2))
+            tk.Label(self.frame, text=label.upper(),
+                     font=_font(FONT_SANS, 9, 'bold'),
+                     bg=C['panel_bg'], fg=C['text_secondary'],
+                     anchor=tk.W).pack(side=tk.LEFT, padx=16)
+            return
 
-        quantum_text = "⚛️ Quantum Ready" if QUANTUM_AVAILABLE else "Classical Mode"
-        quantum_color = self.colors['sap_gold'] if QUANTUM_AVAILABLE else self.colors['sky_blue']
+        self.frame = tk.Frame(parent, bg=C['panel_bg'], height=self.H)
+        self.frame.pack(fill=tk.X)
+        self.frame.pack_propagate(False)
 
-        self.quantum_status = tk.Label(status_frame,
-                                       text=quantum_text,
-                                       font=('Segoe UI', 9),
-                                       bg=self.colors['sap_blue'],
-                                       fg=quantum_color)
-        self.quantum_status.pack()
+        self._bar = tk.Frame(self.frame, bg=C['panel_bg'], width=3)
+        self._bar.pack(side=tk.LEFT, fill=tk.Y)
 
-        self.update_time()
+        self._lbl = tk.Label(self.frame,
+                             text=f'  {icon}  {label}',
+                             font=_font(FONT_SANS, 11),
+                             bg=C['panel_bg'], fg=C['text_primary'],
+                             anchor=tk.W, cursor='hand2')
+        self._lbl.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(4, 0))
 
-    def create_main_area(self):
-        """Create main content area with SAP Fiori design"""
-        # Main container with light blue background
-        main_container = tk.Frame(self.root, bg=self.colors['light_blue'])
-        main_container.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+        for w in (self.frame, self._lbl, self._bar):
+            w.bind('<Button-1>', lambda *_: self.command())
+            w.bind('<Enter>',    self._hover_on)
+            w.bind('<Leave>',    self._hover_off)
 
-        # Left panel - Action buttons
-        left_panel = tk.Frame(
-            main_container,
-            bg=self.colors['white'],
-            width=280,
-            relief=tk.FLAT,
-            bd=0
-        )
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=0, pady=0)
-        left_panel.pack_propagate(False)
+    def set_active(self, yes: bool):
+        if self.section:
+            return
+        self.active = yes
+        bg  = C['nav_active_bg'] if yes else C['panel_bg']
+        bar = C['nav_active_bar'] if yes else C['panel_bg']
+        self._bar.config(bg=bar)
+        self._lbl.config(bg=bg)
+        self.frame.config(bg=bg)
 
-        # Add shadow effect with border
-        left_border = tk.Frame(
-            left_panel, bg=self.colors['border_gray'], width=1)
-        left_border.pack(side=tk.RIGHT, fill=tk.Y)
+    def _hover_on(self, _):
+        if not self.active:
+            self._lbl.config(bg=C['nav_hover'])
+            self.frame.config(bg=C['nav_hover'])
 
-        # Button container
-        button_container = tk.Frame(left_panel, bg=self.colors['white'])
-        button_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=20)
+    def _hover_off(self, _):
+        if not self.active:
+            self._lbl.config(bg=C['panel_bg'])
+            self.frame.config(bg=C['panel_bg'])
 
-        # Section title
-        section_label = tk.Label(button_container,
-                                 text="ACTIONS",
-                                 font=('Segoe UI', 11, 'bold'),
-                                 bg=self.colors['white'],
-                                 fg=self.colors['text_dark'],
-                                 anchor=tk.W)
-        section_label.pack(fill=tk.X, pady=(0, 15))
 
-        # Professional SAP-style buttons
-        buttons = [
-            ("📂  Load Data", self.load_data,
-             self.colors['sap_blue'], "primary"),
-            ("⚡  Greedy Optimizer", lambda: self.run_optimizer('greedy'),
-             self.colors['success_green'], "success"),
-            ("🔄  Local Search", lambda: self.run_optimizer('local_search'),
-             self.colors['sky_blue'], "secondary"),
-            ("⚛️  QAOA Quantum", lambda: self.run_optimizer('qaoa'),
-             self.colors['sap_gold'], "accent"),
-            ("📊  Compare All", self.compare_all,
-             self.colors['sap_blue'], "primary"),
-            ("🗑️  Clear Results", self.clear_results,
-             self.colors['border_gray'], "default"),
-        ]
+class KPITile:
+    """Single SAP KPI tile: colored accent bar · label · value · unit."""
 
-        for text, command, color, btn_type in buttons:
-            self.create_sap_button(
-                button_container, text, command, color, btn_type)
+    def __init__(self, parent, title, unit, accent_color):
+        self.card = tk.Frame(parent, bg=C['panel_bg'],
+                             relief=tk.FLAT, bd=0,
+                             highlightbackground=C['border'],
+                             highlightthickness=1)
+        self.card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
+                       padx=4, pady=0)
 
-        # Right panel - Results display
-        right_panel = tk.Frame(main_container, bg=self.colors['white'])
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH,
-                         expand=True, padx=15, pady=15)
+        # Colored accent bar (top 4 px)
+        tk.Frame(self.card, bg=accent_color, height=4).pack(fill=tk.X)
 
-        # Results header
-        results_header = tk.Frame(right_panel, bg=self.colors['white'])
-        results_header.pack(fill=tk.X, pady=(0, 10))
+        inner = tk.Frame(self.card, bg=C['panel_bg'])
+        inner.pack(fill=tk.BOTH, expand=True, padx=12, pady=6)
 
-        results_title = tk.Label(results_header,
-                                 text="Results",
-                                 font=('Segoe UI', 16, 'bold'),
-                                 bg=self.colors['white'],
-                                 fg=self.colors['text_dark'])
-        results_title.pack(side=tk.LEFT)
+        tk.Label(inner, text=title,
+                 font=_font(FONT_SANS, 9),
+                 bg=C['panel_bg'], fg=C['text_secondary'],
+                 anchor=tk.W).pack(anchor=tk.W)
 
-        # Results text area with SAP styling
-        results_container = tk.Frame(right_panel,
-                                     bg=self.colors['border_gray'],
-                                     relief=tk.FLAT,
-                                     bd=1)
-        results_container.pack(fill=tk.BOTH, expand=True)
+        self._val = tk.Label(inner, text='—',
+                             font=_font(FONT_SANS, 20, 'bold'),
+                             bg=C['panel_bg'], fg=C['text_primary'],
+                             anchor=tk.W)
+        self._val.pack(anchor=tk.W)
 
-        self.results_text = scrolledtext.ScrolledText(
-            results_container,
-            font=('Consolas', 10),
-            bg=self.colors['white'],
-            fg=self.colors['text_dark'],
+        tk.Label(inner, text=unit,
+                 font=_font(FONT_SANS, 9),
+                 bg=C['panel_bg'], fg=C['text_secondary'],
+                 anchor=tk.W).pack(anchor=tk.W)
+
+    def update(self, value: str):
+        self._val.config(text=value)
+
+
+class SAPLogPanel:
+    """Right-side log panel with tag-colored output and auto-scroll."""
+
+    def __init__(self, parent):
+        # Panel header
+        hdr = tk.Frame(parent, bg=C['panel_bg'])
+        hdr.pack(fill=tk.X, padx=0, pady=(0, 0))
+
+        tk.Label(hdr, text='Console Output',
+                 font=_font(FONT_SANS, 12, 'bold'),
+                 bg=C['panel_bg'], fg=C['text_primary']).pack(side=tk.LEFT, padx=16, pady=8)
+
+        # Thin separator below header
+        tk.Frame(parent, bg=C['border'], height=1).pack(fill=tk.X)
+
+        # Text widget inside a border frame
+        log_frame = tk.Frame(parent,
+                             bg=C['border'], bd=0)
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+
+        self.text = scrolledtext.ScrolledText(
+            log_frame,
+            font=_font(FONT_MONO, 10),
+            bg=C['log_bg'],
+            fg=C['text_primary'],
             wrap=tk.WORD,
             relief=tk.FLAT,
             bd=0,
-            padx=15,
-            pady=15
+            padx=14,
+            pady=10,
+            insertwidth=0,
+            state=tk.NORMAL,
         )
-        self.results_text.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+        self.text.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
 
-        # Welcome message
-        self.log_message("="*70, self.colors['sap_blue'])
-        self.log_message("  SAP QUANTUM TRANSPORT OPTIMIZER",
-                         self.colors['sap_blue'])
-        self.log_message("  Powered by Qiskit & RasQberry",
-                         self.colors['sky_blue'])
-        self.log_message("="*70, self.colors['sap_blue'])
-        self.log_message("")
-        self.log_message("👋 Welcome to the SAP Quantum Transport Optimizer!")
-        self.log_message("")
-        self.log_message("📌 Quick Start:")
-        self.log_message("   1. Press 'Load Data' to load sample shipments")
-        self.log_message("   2. Choose an optimization algorithm")
-        self.log_message("   3. Compare results from different approaches")
-        self.log_message("")
-        status_text = "Ready" if QUANTUM_AVAILABLE else "Classical Mode Only"
-        self.log_message(f"⚛️  Quantum Status: {status_text}")
-        self.log_message("="*70, self.colors['border_gray'])
-        self.log_message("")
+        # Tag definitions
+        self.text.tag_config('hdr',   foreground=C['log_hdr'],  font=_font(FONT_MONO, 10, 'bold'))
+        self.text.tag_config('info',  foreground=C['log_info'])
+        self.text.tag_config('ok',    foreground=C['log_ok'])
+        self.text.tag_config('warn',  foreground=C['log_warn'])
+        self.text.tag_config('error', foreground=C['error'])
+        self.text.tag_config('sep',   foreground=C['log_sep'])
+        self.text.tag_config('q',     foreground=C['quantum'],  font=_font(FONT_MONO, 10, 'bold'))
 
-    def create_sap_button(self, parent, text, command, color, btn_type):
-        """Create a professional SAP Fiori-style button"""
-        btn_frame = tk.Frame(parent, bg=self.colors['white'])
-        btn_frame.pack(fill=tk.X, pady=6)
+    def write(self, msg: str, tag: str = ''):
+        self.text.config(state=tk.NORMAL)
+        self.text.insert(tk.END, msg + '\n', tag if tag else ())
+        self.text.see(tk.END)
+        self.text.config(state=tk.NORMAL)
 
-        # Determine text color based on button type
-        if btn_type == 'default':
-            text_color = self.colors['text_dark']
-            hover_color = self.colors['border_gray']
-        else:
-            text_color = self.colors['white']
-            hover_color = color
+    def clear(self):
+        self.text.config(state=tk.NORMAL)
+        self.text.delete('1.0', tk.END)
 
-        btn = tk.Button(btn_frame,
-                        text=text,
-                        command=command,
-                        font=('Segoe UI', 12, 'bold'),
-                        bg=color,
-                        fg=text_color,
-                        activebackground=hover_color,
-                        activeforeground=self.colors['white'],
-                        relief=tk.FLAT,
-                        bd=0,
-                        height=2,
-                        cursor='hand2',
-                        padx=15,
-                        pady=8)
-        btn.pack(fill=tk.BOTH, expand=True)
 
-        # Hover effects
-        def on_enter(e):
-            if btn_type == 'default':
-                btn.config(bg=self.colors['text_dark'],
-                           fg=self.colors['white'])
-            else:
-                btn.config(bg=self.colors['hover_blue'])
+class StatusBar:
+    """Bottom status bar: indicator dot · message · progress · exit."""
 
-        def on_leave(e):
-            btn.config(bg=color, fg=text_color)
+    def __init__(self, parent):
+        bar = tk.Frame(parent, bg=C['panel_bg'],
+                       highlightbackground=C['border'],
+                       highlightthickness=1,
+                       height=32)
+        bar.pack(fill=tk.X, side=tk.BOTTOM)
+        bar.pack_propagate(False)
 
-        btn.bind('<Enter>', on_enter)
-        btn.bind('<Leave>', on_leave)
+        self._dot = tk.Label(bar, text='●',
+                             font=_font(FONT_SANS, 10),
+                             bg=C['panel_bg'], fg=C['success'])
+        self._dot.pack(side=tk.LEFT, padx=(12, 4))
 
-    def create_footer(self):
-        """Create professional footer"""
-        footer_frame = tk.Frame(
-            self.root,
-            bg=self.colors['light_blue'],
-            height=50
-        )
-        footer_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        footer_frame.pack_propagate(False)
+        self._msg = tk.Label(bar, text='Ready',
+                             font=_font(FONT_SANS, 10),
+                             bg=C['panel_bg'], fg=C['text_primary'],
+                             anchor=tk.W)
+        self._msg.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-        # Status bar
-        status_container = tk.Frame(footer_frame, bg=self.colors['white'])
-        status_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=8)
+        self._prog = ttk.Progressbar(bar, mode='indeterminate', length=120)
 
-        self.status_label = tk.Label(status_container,
-                                     text="Ready",
-                                     font=('Segoe UI', 10),
-                                     bg=self.colors['white'],
-                                     fg=self.colors['text_dark'],
-                                     anchor=tk.W)
-        self.status_label.pack(side=tk.LEFT, padx=10)
-
-        # Exit button
-        exit_btn = tk.Button(status_container,
-                             text="Exit",
-                             command=self.root.quit,
-                             font=('Segoe UI', 10, 'bold'),
-                             bg=self.colors['border_gray'],
-                             fg=self.colors['text_dark'],
-                             activebackground=self.colors['text_dark'],
-                             activeforeground=self.colors['white'],
-                             relief=tk.FLAT,
-                             cursor='hand2',
-                             padx=20,
-                             pady=5)
+        exit_btn = tk.Button(bar, text='Exit',
+                             font=_font(FONT_SANS, 9, 'bold'),
+                             bg=C['panel_bg'], fg=C['text_secondary'],
+                             activebackground=C['error'],
+                             activeforeground='#FFFFFF',
+                             relief=tk.FLAT, bd=0,
+                             cursor='hand2', padx=14, pady=0,
+                             command=lambda: bar.winfo_toplevel().quit())
         exit_btn.pack(side=tk.RIGHT, padx=10)
 
-    def update_time(self):
-        """Update time display"""
-        self.time_label.config(text=datetime.now().strftime("%H:%M:%S"))
-        self.root.after(1000, self.update_time)
+    def set(self, msg: str, busy: bool = False, color: str = ''):
+        dot_color = C['warning'] if busy else (color or C['success'])
+        self._dot.config(fg=dot_color)
+        self._msg.config(text=msg)
+        if busy:
+            self._prog.pack(side=tk.RIGHT, padx=8)
+            self._prog.start(12)
+        else:
+            self._prog.stop()
+            self._prog.pack_forget()
 
-    def log_message(self, message, color=None):
-        """Add message to results area with optional color"""
-        self.results_text.insert(tk.END, f"{message}\n")
-        if color:
-            # Color the last line
-            last_line_start = self.results_text.index("end-2c linestart")
-            last_line_end = self.results_text.index("end-1c")
-            tag_name = f"color_{color}"
-            self.results_text.tag_config(tag_name, foreground=color)
-            self.results_text.tag_add(tag_name, last_line_start, last_line_end)
-        self.results_text.see(tk.END)
-        self.root.update()
 
-    def update_status(self, message):
-        """Update status bar"""
-        self.status_label.config(text=message)
-        self.root.update()
+class SAPQuantumTransportGUI:
+    """Main application window."""
+
+    def __init__(self, root: tk.Tk):
+        self.root  = root
+        self.data  = None
+        self.results: list = []
+        self._nav_items: list = []
+        self._active_nav = None
+
+        root.title('SAP Quantum Transport Optimizer')
+        root.geometry('1280x768')
+        root.minsize(1024, 600)
+        root.configure(bg=C['page_bg'])
+
+        self._build_ui()
+        root.bind('<Escape>', lambda *_: root.quit())
+        root.bind('<F5>',     lambda *_: self.load_data())
+        root.bind('<F1>',     lambda *_: self._show_help())
+
+    # ── UI Construction ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _resolve_logo(root_dir: Path) -> Path | None:
+        """
+        Return the best available logo path, rasterizing SVG → PNG if needed.
+        Priority: SAP_2011_logo.svg  >  sap_logo.png  >  icon.png
+        """
+        svg = root_dir / 'SAP_2011_logo.svg'
+        cached_png = root_dir / 'sap_logo_cached.png'
+
+        if svg.exists():
+            # Rasterize SVG once; cache the PNG next to the project root
+            if not cached_png.exists():
+                import subprocess
+                try:
+                    subprocess.run(
+                        ['sips', '-s', 'format', 'png',
+                         str(svg), '--out', str(cached_png)],
+                        check=True, capture_output=True
+                    )
+                except Exception:
+                    pass
+            if cached_png.exists():
+                return cached_png
+
+        for candidate in [root_dir / 'sap_logo.png', root_dir / 'icon.png']:
+            if candidate.exists():
+                return candidate
+
+        return None
+
+    def _build_ui(self):
+        root_dir  = Path(__file__).parent.parent
+        logo_path = self._resolve_logo(root_dir)
+
+        # Shell bar
+        SAPShell(self.root, logo_path)
+
+        # Body (nav | content)
+        body = tk.Frame(self.root, bg=C['page_bg'])
+        body.pack(fill=tk.BOTH, expand=True)
+
+        self._build_nav(body)
+        self._build_content(body)
+
+        # Status bar
+        self.status = StatusBar(self.root)
+        self._welcome()
+
+    def _build_nav(self, parent):
+        nav_outer = tk.Frame(parent, bg=C['panel_bg'], width=220,
+                             highlightbackground=C['border'],
+                             highlightthickness=1)
+        nav_outer.pack(side=tk.LEFT, fill=tk.Y)
+        nav_outer.pack_propagate(False)
+
+        # Scrollable nav area
+        nav = tk.Frame(nav_outer, bg=C['panel_bg'])
+        nav.pack(fill=tk.BOTH, expand=True, pady=8)
+
+        def item(label, icon, cmd, section=False):
+            ni = NavItem(nav, label, icon, cmd, section_head=section)
+            if not section:
+                self._nav_items.append(ni)
+            return ni
+
+        item('Data', '', None, section=True)
+        item('Load Data',          '↓', self.load_data)
+
+        item('Algorithms', '', None, section=True)
+        item('Greedy Optimizer',   '▶', lambda: self._run('greedy'))
+        item('Local Search (SA)',  '⟳', lambda: self._run('local_search'))
+        item('QAOA Quantum',       '⚛', lambda: self._run('qaoa'))
+
+        item('Analysis', '', None, section=True)
+        item('Compare Results',    '≡', self._compare)
+        item('Export JSON',        '⬆', self._export)
+
+        item('', '', None, section=True)
+        item('Clear Console',      '✕', self._clear)
+        item('Help',               '?', self._show_help)
+
+    def _build_content(self, parent):
+        content = tk.Frame(parent, bg=C['page_bg'])
+        content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
+                     padx=12, pady=10)
+
+        # ── KPI tiles row ─────────────────────────────────────────────────
+        tile_row = tk.Frame(content, bg=C['page_bg'], height=90)
+        tile_row.pack(fill=tk.X, pady=(0, 10))
+        tile_row.pack_propagate(False)
+
+        self.kpi_cost     = KPITile(tile_row, 'Total Cost',      'EUR',     C['tile_cost'])
+        self.kpi_co2      = KPITile(tile_row, 'Total CO₂',       'kg',      C['tile_co2'])
+        self.kpi_assigned = KPITile(tile_row, 'Shipments Assigned', '/ total', C['tile_assigned'])
+        self.kpi_time     = KPITile(tile_row, 'Computation Time', 'seconds', C['tile_time'])
+
+        # ── Log panel ────────────────────────────────────────────────────
+        log_card = tk.Frame(content, bg=C['panel_bg'],
+                            highlightbackground=C['border'],
+                            highlightthickness=1)
+        log_card.pack(fill=tk.BOTH, expand=True)
+        self.log = SAPLogPanel(log_card)
+
+    # ── Welcome message ───────────────────────────────────────────────────────
+
+    def _welcome(self):
+        L = self.log
+        L.write('─' * 72, 'sep')
+        L.write('  SAP QUANTUM TRANSPORT OPTIMIZER', 'hdr')
+        L.write('  Powered by Qiskit 2.x  ·  AerSimulator  ·  RasQberry Edition', 'q')
+        L.write('─' * 72, 'sep')
+        L.write('')
+        L.write('  Quick Start:', 'info')
+        L.write('    1.  Load Data          — import shipments, trucks, lanes')
+        L.write('    2.  Run an Algorithm   — Greedy, Local Search, or QAOA')
+        L.write('    3.  Compare Results    — side-by-side algorithm comparison')
+        L.write('')
+        q_status = 'AVAILABLE  (Qiskit 2.x + AerSimulator)' if QUANTUM_AVAILABLE \
+                   else 'NOT AVAILABLE  (install: pip install qiskit qiskit-aer scipy)'
+        tag = 'q' if QUANTUM_AVAILABLE else 'warn'
+        L.write(f'  Quantum Engine : {q_status}', tag)
+        L.write('─' * 72, 'sep')
+        L.write('')
+
+    # ── Nav helpers ───────────────────────────────────────────────────────────
+
+    def _activate_nav(self, index: int):
+        for i, ni in enumerate(self._nav_items):
+            ni.set_active(i == index)
+
+    # ── Data ─────────────────────────────────────────────────────────────────
 
     def load_data(self):
-        """Load data from CSV files"""
-        self.update_status("Loading data...")
-        self.log_message("\n" + "="*60)
-        self.log_message("Loading data from CSV files...",
-                         self.colors['sap_blue'])
-
+        self._activate_nav(0)
+        self.status.set('Loading data …', busy=True)
+        self.log.write('')
+        self.log.write('  Loading CSV files …', 'info')
         try:
-            data_dir = Path(__file__).parent.parent / "data" / "input"
-            loader = CSVLoader(str(data_dir))
+            data_dir = Path(__file__).parent.parent / 'data' / 'input'
+            loader   = CSVLoader(str(data_dir))
             self.data = loader.load_all()
+            n_s = len(self.data['shipments'])
+            n_t = len(self.data['trucks'])
+            n_l = len(self.data['lanes'])
+            self.log.write(f'  ✓  {n_s} shipments', 'ok')
+            self.log.write(f'  ✓  {n_t} trucks', 'ok')
+            self.log.write(f'  ✓  {n_l} lanes', 'ok')
+            self.kpi_assigned.update(f'0 / {n_s}')
+            self.status.set(f'Data loaded — {n_s} shipments, {n_t} trucks, {n_l} lanes')
+        except Exception as exc:
+            self.log.write(f'  ✗  {exc}', 'error')
+            self.status.set('Error loading data', color=C['error'])
+            messagebox.showerror('Load Error', str(exc))
 
-            self.log_message(
-                f"✓ Loaded {len(self.data['shipments'])} shipments", self.colors['success_green'])
-            self.log_message(
-                f"✓ Loaded {len(self.data['trucks'])} trucks", self.colors['success_green'])
-            self.log_message(
-                f"✓ Loaded {len(self.data['lanes'])} lanes", self.colors['success_green'])
-            self.log_message("="*60)
+    # ── Optimization ─────────────────────────────────────────────────────────
 
-            self.update_status("Data loaded successfully")
-            messagebox.showinfo("Success", "Data loaded successfully!")
-
-        except Exception as e:
-            self.log_message(
-                f"❌ Error loading data: {e}", self.colors['text_dark'])
-            self.update_status("Error loading data")
-            messagebox.showerror("Error", f"Failed to load data:\n{e}")
-
-    def run_optimizer(self, algorithm):
-        """Run optimization algorithm in background thread"""
+    def _run(self, algo: str):
         if self.data is None:
-            messagebox.showwarning("Warning", "Please load data first!")
+            messagebox.showwarning('No Data', 'Please load data first (↓ Load Data).')
             return
+        nav_map = {'greedy': 1, 'local_search': 2, 'qaoa': 3}
+        self._activate_nav(nav_map.get(algo, 0))
+        self.status.set(f'Running {algo} …', busy=True)
+        t = threading.Thread(target=self._run_thread, args=(algo,), daemon=True)
+        t.start()
 
-        self.current_algorithm = algorithm
-        self.update_status(f"Running {algorithm}...")
-
-        # Run in thread to keep GUI responsive
-        thread = threading.Thread(
-            target=self._run_optimizer_thread, args=(algorithm,))
-        thread.daemon = True
-        thread.start()
-
-    def _run_optimizer_thread(self, algorithm):
-        """Background thread for optimization"""
+    def _run_thread(self, algo: str):
         try:
-            self.log_message(f"\n{'='*60}")
-            self.log_message(
-                f"Running {algorithm.upper()} Optimizer...", self.colors['sap_blue'])
-            self.log_message(f"{'='*60}")
+            label = {'greedy': 'Greedy Optimizer',
+                     'local_search': 'Local Search (Simulated Annealing)',
+                     'qaoa': 'QAOA Quantum'}[algo]
 
-            if algorithm == 'greedy':
-                optimizer = GreedyOptimizer(
-                    self.data['shipments'],
-                    self.data['trucks'],
-                    self.data['lanes']
-                )
-                result = optimizer.optimize(objective='balanced')
+            self.log.write('')
+            self.log.write('─' * 72, 'sep')
+            self.log.write(f'  {label}', 'hdr')
+            self.log.write('─' * 72, 'sep')
 
-            elif algorithm == 'local_search':
-                optimizer = LocalSearchOptimizer(
-                    self.data['shipments'],
-                    self.data['trucks'],
-                    self.data['lanes']
-                )
-                result = optimizer.optimize(max_iterations=500)
+            ships  = self.data['shipments']
+            trucks = self.data['trucks']
+            lanes  = self.data['lanes']
 
-            elif algorithm == 'qaoa':
+            if algo == 'greedy':
+                result = GreedyOptimizer(ships, trucks, lanes).optimize(
+                    objective='balanced')
+
+            elif algo == 'local_search':
+                result = LocalSearchOptimizer(ships, trucks, lanes).optimize(
+                    max_iterations=500)
+
+            elif algo == 'qaoa':
                 if not QUANTUM_AVAILABLE:
-                    self.log_message("❌ Quantum optimizer not available")
-                    self.update_status("Quantum optimizer not available")
+                    self.log.write('  ✗  Quantum packages not available.', 'error')
+                    self.status.set('Quantum not available', color=C['error'])
                     return
+                # Demo: 4 shipments × 4 trucks = 16 qubits
+                sub_ships  = ships[:4]
+                sub_trucks = trucks[:4]
+                self.log.write(
+                    f'  Sub-problem: {len(sub_ships)} shipments × '
+                    f'{len(sub_trucks)} trucks = '
+                    f'{len(sub_ships)*len(sub_trucks)} qubits', 'q')
+                result = QAOAOptimizer(
+                    sub_ships, sub_trucks, lanes,
+                    qaoa_reps=2, max_iter=100, shots=2048
+                ).optimize(progress_callback=lambda m: self.log.write(f'  {m}', 'q'))
 
-                # Use smaller problem for faster QAOA on Raspberry Pi
-                limited_shipments = self.data['shipments'][:2]
-                limited_trucks = self.data['trucks'][:2]
-
-                self.log_message(
-                    f"Using {len(limited_shipments)} shipments and {len(limited_trucks)} trucks for QAOA demo")
-                self.log_message(
-                    "(Full problem would take too long on Raspberry Pi)")
-
-                optimizer = QAOAOptimizer(
-                    limited_shipments,
-                    limited_trucks,
-                    self.data['lanes'],
-                    qaoa_reps=2,
-                    max_iter=100
-                )
-                result = optimizer.optimize_with_fallback(
-                    progress_callback=self.log_message
-                )
-
-            # Display results
-            self.display_result(result)
+            self._show_result(result)
             self.results.append(result)
+            self.status.set(f'{label} completed  |  '
+                            f'€{result.total_cost:,.0f}  ·  '
+                            f'{result.shipments_assigned} assigned')
 
-            self.update_status(f"{algorithm} completed")
-
-        except Exception as e:
-            self.log_message(f"❌ Error: {e}")
+        except Exception as exc:
             import traceback
-            self.log_message(traceback.format_exc())
-            self.update_status(f"Error in {algorithm}")
+            self.log.write(f'  ✗  {exc}', 'error')
+            self.log.write(traceback.format_exc(), 'error')
+            self.status.set(f'Error in {algo}', color=C['error'])
 
-    def display_result(self, result):
-        """Display optimization result with SAP styling"""
-        self.log_message(
-            f"\nAlgorithm: {result.algorithm}", self.colors['sap_blue'])
-        self.log_message(
-            f"Total Cost:     €{result.total_cost:,.2f}", self.colors['text_dark'])
-        self.log_message(
-            f"Total CO₂:      {result.total_co2:,.2f} kg", self.colors['text_dark'])
-        self.log_message(
-            f"Time:           {result.computation_time:.3f} seconds", self.colors['text_dark'])
-        self.log_message(
-            f"Trucks Used:    {result.trucks_used}", self.colors['text_dark'])
-        self.log_message(
-            f"Assigned:       {result.shipments_assigned}", self.colors['success_green'])
-        self.log_message(
-            f"Unassigned:     {result.shipments_unassigned}", self.colors['text_dark'])
-        self.log_message("="*60)
+    def _show_result(self, r):
+        n_total = len(self.data['shipments']) if self.data else r.shipments_assigned
 
-    def compare_all(self):
-        """Compare all algorithm results"""
+        # KPI tiles
+        self.kpi_cost.update(f'{r.total_cost:,.0f}')
+        self.kpi_co2.update(f'{r.total_co2:,.0f}')
+        self.kpi_assigned.update(f'{r.shipments_assigned} / {n_total}')
+        self.kpi_time.update(f'{r.computation_time:.2f}')
+
+        # Log
+        W = 30
+        self.log.write('')
+        self.log.write(f'  Algorithm  : {r.algorithm}', 'info')
+        self.log.write(f'  {"Total Cost":<{W}} €{r.total_cost:>14,.2f}')
+        self.log.write(f'  {"Total CO₂":<{W}} {r.total_co2:>14,.2f} kg')
+        self.log.write(f'  {"Computation Time":<{W}} {r.computation_time:>14.3f} s')
+        self.log.write(f'  {"Trucks Used":<{W}} {r.trucks_used:>14}')
+        self.log.write(f'  {"Shipments Assigned":<{W}} {r.shipments_assigned:>14}', 'ok')
+        self.log.write(f'  {"Shipments Unassigned":<{W}} {r.shipments_unassigned:>14}')
+
+        if r.metadata:
+            for k, v in r.metadata.items():
+                if k not in ('unassigned_shipments', 'cost_history'):
+                    self.log.write(f'  {"  · " + str(k):<{W}} {str(v):>14}', 'sep')
+
+        # First 5 assignments
+        if r.assignments:
+            self.log.write('')
+            self.log.write(
+                f'  {"Shipment":<12}{"Truck":<10}{"Lane":<10}'
+                f'{"Cost (€)":>10}{"CO₂ (kg)":>10}', 'sep')
+            self.log.write('  ' + '─' * 54, 'sep')
+            for a in r.assignments[:5]:
+                self.log.write(
+                    f'  {a["shipment"].shipment_id:<12}'
+                    f'{a["truck"].truck_id:<10}'
+                    f'{a["lane"].lane_id:<10}'
+                    f'{a["cost"]:>10.2f}'
+                    f'{a["co2"]:>10.2f}')
+            if len(r.assignments) > 5:
+                self.log.write(
+                    f'  … and {len(r.assignments) - 5} more assignments', 'sep')
+        self.log.write('─' * 72, 'sep')
+
+    # ── Compare ──────────────────────────────────────────────────────────────
+
+    def _compare(self):
+        self._activate_nav(4)
         if len(self.results) < 2:
-            messagebox.showinfo(
-                "Info", "Run at least 2 algorithms to compare!")
+            messagebox.showinfo('Compare', 'Run at least 2 algorithms first.')
             return
 
-        self.log_message(f"\n{'='*60}")
-        self.log_message("ALGORITHM COMPARISON", self.colors['sap_blue'])
-        self.log_message(f"{'='*60}")
-        self.log_message(
-            f"{'Algorithm':<25} {'Cost (€)':<15} {'CO₂ (kg)':<15}")
-        self.log_message("-"*60)
+        self.log.write('')
+        self.log.write('─' * 72, 'sep')
+        self.log.write('  ALGORITHM COMPARISON', 'hdr')
+        self.log.write('─' * 72, 'sep')
+        self.log.write(
+            f'  {"Algorithm":<32}{"Cost (€)":>12}{"CO₂ (kg)":>12}'
+            f'{"Assigned":>10}{"Time (s)":>10}', 'sep')
+        self.log.write('  ' + '─' * 66, 'sep')
 
-        for result in self.results:
-            self.log_message(f"{result.algorithm:<25} "
-                             f"{result.total_cost:<15,.2f} "
-                             f"{result.total_co2:<15,.2f}")
+        for r in self.results:
+            self.log.write(
+                f'  {r.algorithm:<32}'
+                f'{r.total_cost:>12,.0f}'
+                f'{r.total_co2:>12,.0f}'
+                f'{r.shipments_assigned:>10}'
+                f'{r.computation_time:>10.3f}')
 
-        self.log_message("-"*60)
-
-        # Find best
+        self.log.write('  ' + '─' * 66, 'sep')
         best_cost = min(self.results, key=lambda r: r.total_cost)
-        best_co2 = min(self.results, key=lambda r: r.total_co2)
+        best_co2  = min(self.results, key=lambda r: r.total_co2)
+        self.log.write(f'  ★  Best Cost : {best_cost.algorithm}  (€{best_cost.total_cost:,.0f})', 'ok')
+        self.log.write(f'  ★  Best CO₂  : {best_co2.algorithm}  ({best_co2.total_co2:,.0f} kg)', 'ok')
+        self.log.write('─' * 72, 'sep')
+        self.status.set('Comparison complete')
 
-        self.log_message(
-            f"\n✓ Best Cost: {best_cost.algorithm} (€{best_cost.total_cost:,.2f})",
-            self.colors['success_green'])
-        self.log_message(
-            f"✓ Best CO₂:  {best_co2.algorithm} ({best_co2.total_co2:,.2f} kg)",
-            self.colors['success_green'])
-        self.log_message("="*60)
+    # ── Export ───────────────────────────────────────────────────────────────
 
-    def clear_results(self):
-        """Clear results display"""
-        self.results_text.delete(1.0, tk.END)
-        self.results = []
-        self.log_message("="*70, self.colors['sap_blue'])
-        self.log_message(
-            "  Results cleared. Ready for new optimization.", self.colors['text_dark'])
-        self.log_message("="*70, self.colors['sap_blue'])
-        self.update_status("Ready")
+    def _export(self):
+        self._activate_nav(5)
+        if not self.results:
+            messagebox.showinfo('Export', 'No results to export yet.')
+            return
+        import json
+        out = Path(__file__).parent.parent / 'data' / 'output' / 'gui_results.json'
+        out.parent.mkdir(parents=True, exist_ok=True)
+        data = [r.to_dict() for r in self.results]
+        out.write_text(json.dumps(data, indent=2))
+        self.log.write(f'  ✓  Exported {len(data)} results → {out}', 'ok')
+        self.status.set(f'Exported to {out.name}')
 
-    def show_help(self):
-        """Show help dialog"""
-        help_text = """
-SAP Quantum Transport Optimizer - Help
+    # ── Clear ────────────────────────────────────────────────────────────────
 
-FEATURES:
-• Classical Algorithms: Greedy, Local Search
-• Quantum Algorithm: QAOA (Quantum Approximate Optimization)
-• Multi-objective: Cost & CO₂ optimization
+    def _clear(self):
+        self._activate_nav(6)
+        self.results.clear()
+        self.log.clear()
+        self.kpi_cost.update('—')
+        self.kpi_co2.update('—')
+        self.kpi_assigned.update('—')
+        self.kpi_time.update('—')
+        self._welcome()
+        self.status.set('Ready')
 
-KEYBOARD SHORTCUTS:
-• F1  - Show this help
-• F5  - Load data
-• ESC - Exit application
+    # ── Help ─────────────────────────────────────────────────────────────────
 
-ALGORITHMS:
-• Greedy: Fast baseline solution
-• Local Search: Improved solution with simulated annealing
-• QAOA: Quantum optimization (best for small problems)
-
-For more information, visit: https://rasqberry.org
-        """
+    def _show_help(self):
+        self._activate_nav(7)
         messagebox.showinfo(
-            "Help - SAP Quantum Transport Optimizer", help_text)
+            'SAP Quantum Transport Optimizer — Help',
+            'ALGORITHMS\n'
+            '  Greedy           Fast baseline heuristic (priority sort)\n'
+            '  Local Search     Simulated annealing over Greedy solution\n'
+            '  QAOA             Real Qiskit 2.x QAOAAnsatz + AerSampler\n\n'
+            'QUANTUM DETAIL\n'
+            '  • QUBO → Ising Hamiltonian via Pauli-Z mapping\n'
+            '  • QAOAAnsatz  p=2 layers (cost + mixer)\n'
+            '  • COBYLA classical optimiser (100 iterations)\n'
+            '  • 2048 shots on AerSimulator (statevector mode)\n\n'
+            'KEYBOARD SHORTCUTS\n'
+            '  F5   Load Data\n'
+            '  F1   This help\n'
+            '  ESC  Exit\n\n'
+            'https://rasqberry.org'
+        )
 
 
 def main():
-    """Main entry point"""
     root = tk.Tk()
-    app = SAPQuantumTransportGUI(root)
+    SAPQuantumTransportGUI(root)
     root.mainloop()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

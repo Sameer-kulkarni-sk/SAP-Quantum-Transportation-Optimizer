@@ -20,13 +20,13 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent))
 
 
-# Try to import quantum optimizer
+# Try to import quantum optimizer (requires qiskit + qiskit-aer)
 try:
-    from optimizers.quantum.qaoa_optimizer import QAOAOptimizer
-    QUANTUM_AVAILABLE = True
+    from optimizers.quantum.qaoa_optimizer import QAOAOptimizer, QISKIT_AVAILABLE
+    QUANTUM_AVAILABLE = QISKIT_AVAILABLE
 except ImportError:
     QUANTUM_AVAILABLE = False
-    print("Note: Quantum optimizer not available. Install qiskit-optimization and qiskit-algorithms.")
+    print("Note: Quantum optimizer not available. Install: pip install qiskit qiskit-aer scipy")
 
 
 def print_header():

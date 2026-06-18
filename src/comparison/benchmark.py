@@ -6,11 +6,11 @@ from optimizers.classical.exact_solver import ExactSolver
 from optimizers.classical.genetic_algorithm import GeneticAlgorithm
 from optimizers.base_optimizer import OptimizationResult
 
-# Try to import quantum optimizers
+# Try to import quantum optimizers (requires qiskit + qiskit-aer)
 try:
-    from optimizers.quantum.qaoa_optimizer import QAOAOptimizer
+    from optimizers.quantum.qaoa_optimizer import QAOAOptimizer, QISKIT_AVAILABLE
     from optimizers.quantum.hybrid_qaoa_optimizer import HybridQAOAOptimizer
-    QUANTUM_AVAILABLE = True
+    QUANTUM_AVAILABLE = QISKIT_AVAILABLE
 except ImportError:
     QUANTUM_AVAILABLE = False
 from models.shipment import Shipment
@@ -364,6 +364,8 @@ class BenchmarkSuite:
                 'metadata': result.metadata
             }
 
+        import os
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, 'w') as f:
             json.dump(export_data, f, indent=2)
 

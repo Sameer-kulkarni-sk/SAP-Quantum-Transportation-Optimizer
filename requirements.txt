@@ -1,19 +1,14 @@
-# Quantum Transport Optimizer Requirements
-# Install with: pip install -r requirements.txt
+# SAP Quantum Transport Optimizer — dependencies
+# Install: pip install -r requirements.txt
 
-# Core Qiskit packages (should already be in RQB2 venv)
-qiskit>=1.0.0
-qiskit-optimization>=0.6.0
-qiskit-algorithms>=0.3.0
+# Qiskit 2.x (no qiskit-optimization or qiskit-algorithms needed)
+qiskit>=2.0.0
+qiskit-aer>=0.15.0
 
-# Scientific computing (should already be installed)
+# Scientific computing
 numpy>=1.24.0
 scipy>=1.10.0
-pandas>=2.0.0
 
-# Optional: For REST API support
-# requests>=2.31.0
-
-# Optional: For touchscreen GUI (coming soon)
-# tkinter (usually pre-installed with Python)
-# pillow>=10.0.0
+# GUI
+pillow>=10.0.0
+# tkinter ships with Python — no pip install required

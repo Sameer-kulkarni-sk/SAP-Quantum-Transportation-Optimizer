@@ -1,4 +1,10 @@
-"""Hybrid QAOA optimizer that can handle large-scale problems"""
+"""
+Hybrid QAOA optimizer: divides a large assignment problem into
+quantum-solvable chunks and stitches the solutions together.
+
+Uses the real Qiskit 2.x QAOAOptimizer for each chunk ≤ MAX_QUBITS.
+Larger chunks fall back to the classical Greedy optimizer.
+"""
 
 from optimizers.quantum.qaoa_optimizer import QAOAOptimizer
 from optimizers.base_optimizer import BaseOptimizer, OptimizationResult
@@ -10,9 +16,7 @@ import time
 import sys
 from pathlib import Path
 from typing import List, Dict, Optional
-import numpy as np
 
-# Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
@@ -57,8 +61,7 @@ class HybridQAOAOptimizer(BaseOptimizer):
 
     def optimize(self,
                  weights: Optional[Dict[str, float]] = None,
-                 progress_callback=None,
-                 **kwargs) -> OptimizationResult:
+                 progress_callback=None) -> OptimizationResult:
         """
         Run Hybrid QAOA optimization
 
