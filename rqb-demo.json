@@ -1,0 +1,26 @@
+{
+  "id": "sap-quantum-transport-optimizer",
+  "name": "SAP Quantum Transport Optimizer",
+  "category": "tool",
+  "description": "Desktop app comparing classical and QAOA-based quantum approaches to transportation assignment optimization (runs locally on the Aer simulator, no IBM account needed)",
+  "keywords": ["sap", "qaoa", "optimization", "qubo", "transport", "logistics"],
+  "entrypoint": {
+    "type": "python",
+    "script": "src/gui_main.py",
+    "working_dir": "SAP-Quantum-Transportation-Optimizer"
+  },
+  "install": {
+    "preinstalled": false,
+    "repo_url": "https://github.com/Sameer-kulkarni-sk/SAP-Quantum-Transportation-Optimizer.git",
+    "marker_file": "src/gui_main.py",
+    "pip_requirements": true
+  },
+  "needs_hw": { "leds": false, "display": "required", "network": false },
+  "needs_ibm_token": "none",
+  "browser_based": false,
+  "loop_ok": false,
+  "timeout": 0,
+  "icon": { "type": "system", "path": "applications-science" },
+  "menu": { "show": true, "order": 71 },
+  "desktop": { "show": true, "terminal": false }
+}
