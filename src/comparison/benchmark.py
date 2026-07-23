@@ -4,7 +4,7 @@ from optimizers.classical.greedy_optimizer import GreedyOptimizer
 from optimizers.classical.local_search import LocalSearchOptimizer
 from optimizers.classical.exact_solver import ExactSolver
 from optimizers.classical.genetic_algorithm import GeneticAlgorithm
-from optimizers.base_optimizer import OptimizationResult
+
 
 # Try to import quantum optimizers (requires qiskit + qiskit-aer)
 try:
@@ -19,7 +19,7 @@ from models.lane import Lane
 import time
 import sys
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict
 import json
 
 # Add parent directories to path for imports
@@ -138,7 +138,7 @@ class BenchmarkSuite:
         except Exception as e:
             print(f"   ✗ Error: {e}\n")
 
-        # 5. Hybrid QAOA (if requested) - Solves ALL shipments
+        # 5. Hybrid QAOA (if requested) - Solves ALL shipments, comparable to classical
         if include_quantum:
             print("⚛️  Running Hybrid QAOA (quantum-classical hybrid)...")
             print("   ✓ Can solve ALL shipments using divide-and-conquer approach")
@@ -164,16 +164,21 @@ class BenchmarkSuite:
             except Exception as e:
                 print(f"   ✗ Error: {e}\n")
 
-            # Also run pure QAOA for comparison (small subset)
-            print("⚛️  Running Pure QAOA (educational - small subset)...")
+            # Pure QAOA runs on a reduced subset due to qubit limits.
+            # Results are stored separately and NOT mixed into the main
+            # comparison table — comparing a 3-shipment result against
+            # full-problem classical results would be misleading.
+            print("⚛️  Running Pure QAOA (educational - reduced subset only)...")
             print(
-                "   ⚠️  Pure QAOA limited to small subset due to quantum simulation constraints")
+                "   ⚠️  Pure QAOA is limited by qubit count; runs on a small subset.")
 
             qaoa_shipments = self.shipments[:3]
             qaoa_trucks = self.trucks[:2]
 
             print(
-                f"   Using subset: {len(qaoa_shipments)} shipments, {len(qaoa_trucks)} trucks")
+                f"   Using subset: {len(qaoa_shipments)} shipments × "
+                f"{len(qaoa_trucks)} trucks "
+                f"({len(qaoa_shipments)*len(qaoa_trucks)} qubits)")
 
             try:
                 qaoa = QAOAOptimizer(
@@ -181,11 +186,13 @@ class BenchmarkSuite:
                     qaoa_reps=2,
                     max_iter=50
                 )
-                self.results['qaoa'] = qaoa.optimize()
+                # Store under a key that the comparison report will skip
+                # for the main table but will print in a separate section.
+                self.results['qaoa_subset'] = qaoa.optimize()
+                self.results['qaoa_subset'].metadata['subset_shipments'] = len(qaoa_shipments)
+                self.results['qaoa_subset'].metadata['total_shipments'] = len(self.shipments)
                 print(
-                    f"   ✓ Completed in {self.results['qaoa'].computation_time:.2f}s")
-                print(
-                    f"   ⚠️  Note: Pure QAOA solved only {len(qaoa_shipments)}/{len(self.shipments)} shipments (quantum limitation)\n")
+                    f"   ✓ Completed in {self.results['qaoa_subset'].computation_time:.2f}s\n")
             except Exception as e:
                 print(f"   ✗ Error: {e}\n")
 
@@ -234,11 +241,15 @@ class BenchmarkSuite:
 
         comparison_data = {}
 
-        for algo_name, result in self.results.items():
+        # qaoa_subset ran on a different (smaller) problem — exclude from the
+        # main table so numbers stay comparable, then print it separately below.
+        subset_result = self.results.get('qaoa_subset')
+        main_results = {k: v for k, v in self.results.items() if k != 'qaoa_subset'}
+
+        for algo_name, result in main_results.items():
             if result.total_cost == 0:
                 continue
 
-            # Calculate optimality gap
             gap = ((result.total_cost - optimal_cost) / optimal_cost * 100) \
                 if optimal_cost > 0 else 0
 
@@ -262,6 +273,25 @@ class BenchmarkSuite:
             }
 
         print("-"*70)
+
+        # ── Pure QAOA subset result (separate section, not in main comparison) ──
+        if subset_result:
+            sub_n = subset_result.metadata.get('subset_shipments', '?')
+            total_n = subset_result.metadata.get('total_shipments', '?')
+            print(f"\n{'='*70}")
+            print(f"PURE QAOA RESULT  (educational — subset only: "
+                  f"{sub_n}/{total_n} shipments)")
+            print(f"{'='*70}")
+            print("⚠️  These numbers are NOT comparable to the table above.")
+            print(f"   The problem solved here ({sub_n} shipments) is smaller than")
+            print(f"   the full dataset ({total_n} shipments), so cost and CO₂ will")
+            print("   appear lower simply because fewer shipments were assigned.\n")
+            print(f"  Algorithm : {subset_result.algorithm}")
+            print(f"  Cost      : €{subset_result.total_cost:,.2f}  "
+                  f"(for {sub_n}/{total_n} shipments)")
+            print(f"  CO₂       : {subset_result.total_co2:,.2f} kg")
+            print(f"  Time      : {subset_result.computation_time:.2f}s")
+            print(f"{'='*70}")
 
         # Key insights
         print("\n📊 KEY INSIGHTS:")
@@ -355,6 +385,7 @@ class BenchmarkSuite:
         for algo_name, result in self.results.items():
             export_data['results'][algo_name] = {
                 'algorithm': result.algorithm,
+                'comparable_to_full_problem': algo_name != 'qaoa_subset',
                 'total_cost': result.total_cost,
                 'total_co2': result.total_co2,
                 'computation_time': result.computation_time,

@@ -109,9 +109,10 @@ class QAOAOptimizer(BaseOptimizer):
             f"= {n_qubits} qubits  |  p={self.qaoa_reps}")
 
         if n_qubits > self.MAX_QUBITS:
-            log(f"⚠  Problem too large ({n_qubits} qubits > {self.MAX_QUBITS}). "
-                f"Using classical fallback.")
-            return self._greedy_fallback(start, label="QAOA→Greedy (size)")
+            log(f"⚠  Problem too large for QAOA ({n_qubits} qubits > {self.MAX_QUBITS} cap). "
+                f"Falling back to classical Greedy. "
+                f"To use QAOA, reduce to ≤{self.MAX_QUBITS} shipment×truck combinations.")
+            return self._greedy_fallback(start, label=f"Greedy (QAOA skipped — {n_qubits} qubits > {self.MAX_QUBITS} cap)")
 
         # ── 1. Build QUBO → Ising Hamiltonian ───────────────────────────
         log("   Building QUBO + Ising Hamiltonian …")
@@ -226,12 +227,13 @@ class QAOAOptimizer(BaseOptimizer):
         """
         n_qubits = len(self.shipments) * len(self.trucks)
         if n_qubits > self.MAX_QUBITS:
-            msg = (f"Problem too large for QAOA ({n_qubits} vars > {self.MAX_QUBITS}). "
-                   f"Using Greedy.")
+            msg = (f"Problem too large for QAOA ({n_qubits} qubits > {self.MAX_QUBITS} cap). "
+                   f"Falling back to Greedy. "
+                   f"To use QAOA, limit to ≤{self.MAX_QUBITS} shipment×truck combinations.")
             print(msg)
             if progress_callback:
                 progress_callback(msg)
-            return self._greedy_fallback(time.time(), label="QAOA→Greedy (size)")
+            return self._greedy_fallback(time.time(), label=f"Greedy (QAOA skipped — {n_qubits} qubits > {self.MAX_QUBITS} cap)")
 
         return self.optimize(
             weights=weights,

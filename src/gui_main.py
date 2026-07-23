@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from optimizers.classical.local_search import LocalSearchOptimizer
 from optimizers.classical.greedy_optimizer import GreedyOptimizer
+from optimizers.classical.genetic_algorithm import GeneticAlgorithm
+from optimizers.classical.exact_solver import ExactSolver
 from data_loader.csv_loader import CSVLoader
 
 try:
@@ -444,6 +446,8 @@ class SAPQuantumTransportGUI:
         item('Algorithms', '', None, section=True)
         item('Greedy Optimizer',   '▶', lambda: self._run('greedy'))
         item('Local Search (SA)',  '⟳', lambda: self._run('local_search'))
+        item('Genetic Algorithm',  '⚙', lambda: self._run('genetic'))
+        item('Exact Solver',       '🎯', lambda: self._run('exact'))
         item('QAOA Quantum',       '⚛', lambda: self._run('qaoa'))
 
         item('Analysis', '', None, section=True)
@@ -487,7 +491,7 @@ class SAPQuantumTransportGUI:
         L.write('')
         L.write('  Quick Start:', 'info')
         L.write('    1.  Load Data          — import shipments, trucks, lanes')
-        L.write('    2.  Run an Algorithm   — Greedy, Local Search, or QAOA')
+        L.write('    2.  Run an Algorithm   — Greedy, Local Search, Genetic, Exact, or QAOA')
         L.write('    3.  Compare Results    — side-by-side algorithm comparison')
         L.write('')
         q_status = 'AVAILABLE  (Qiskit 2.x + AerSimulator)' if QUANTUM_AVAILABLE \
@@ -533,7 +537,7 @@ class SAPQuantumTransportGUI:
         if self.data is None:
             messagebox.showwarning('No Data', 'Please load data first (↓ Load Data).')
             return
-        nav_map = {'greedy': 1, 'local_search': 2, 'qaoa': 3}
+        nav_map = {'greedy': 1, 'local_search': 2, 'genetic': 3, 'exact': 4, 'qaoa': 5}
         self._activate_nav(nav_map.get(algo, 0))
         self.status.set(f'Running {algo} …', busy=True)
         t = threading.Thread(target=self._run_thread, args=(algo,), daemon=True)
@@ -541,9 +545,11 @@ class SAPQuantumTransportGUI:
 
     def _run_thread(self, algo: str):
         try:
-            label = {'greedy': 'Greedy Optimizer',
-                     'local_search': 'Local Search (Simulated Annealing)',
-                     'qaoa': 'QAOA Quantum'}[algo]
+            label = {'greedy':      'Greedy Optimizer',
+                     'local_search':'Local Search (Simulated Annealing)',
+                     'genetic':     'Genetic Algorithm',
+                     'exact':       'Exact Solver',
+                     'qaoa':        'QAOA Quantum'}[algo]
 
             self.log.write('')
             self.log.write('─' * 72, 'sep')
@@ -561,6 +567,24 @@ class SAPQuantumTransportGUI:
             elif algo == 'local_search':
                 result = LocalSearchOptimizer(ships, trucks, lanes).optimize(
                     max_iterations=500)
+
+            elif algo == 'genetic':
+                result = GeneticAlgorithm(
+                    ships, trucks, lanes,
+                    population_size=50, generations=100
+                ).optimize(objective='balanced')
+
+            elif algo == 'exact':
+                n_vars = len(ships) * len(trucks)
+                if n_vars > 12:
+                    self.log.write(
+                        f'  ✗  Problem too large for exact solver '
+                        f'({n_vars} variables > 12). '
+                        f'Use Simulated Annealing or Genetic Algorithm instead.', 'error')
+                    self.status.set('Exact solver: problem too large', color=C['error'])
+                    return
+                self.log.write(f'  Problem size: {n_vars} variables', 'info')
+                result = ExactSolver(ships, trucks, lanes).optimize(objective='balanced')
 
             elif algo == 'qaoa':
                 if not QUANTUM_AVAILABLE:
@@ -638,7 +662,7 @@ class SAPQuantumTransportGUI:
     # ── Compare ──────────────────────────────────────────────────────────────
 
     def _compare(self):
-        self._activate_nav(4)
+        self._activate_nav(6)
         if len(self.results) < 2:
             messagebox.showinfo('Compare', 'Run at least 2 algorithms first.')
             return
@@ -671,7 +695,7 @@ class SAPQuantumTransportGUI:
     # ── Export ───────────────────────────────────────────────────────────────
 
     def _export(self):
-        self._activate_nav(5)
+        self._activate_nav(7)
         if not self.results:
             messagebox.showinfo('Export', 'No results to export yet.')
             return
@@ -686,7 +710,7 @@ class SAPQuantumTransportGUI:
     # ── Clear ────────────────────────────────────────────────────────────────
 
     def _clear(self):
-        self._activate_nav(6)
+        self._activate_nav(8)
         self.results.clear()
         self.log.clear()
         self.kpi_cost.update('—')
@@ -699,18 +723,21 @@ class SAPQuantumTransportGUI:
     # ── Help ─────────────────────────────────────────────────────────────────
 
     def _show_help(self):
-        self._activate_nav(7)
+        self._activate_nav(9)
         messagebox.showinfo(
             'SAP Quantum Transport Optimizer — Help',
             'ALGORITHMS\n'
             '  Greedy           Fast baseline heuristic (priority sort)\n'
             '  Local Search     Simulated annealing over Greedy solution\n'
+            '  Genetic          Evolutionary optimizer (50 pop, 100 gen)\n'
+            '  Exact Solver     Optimal solution (problems ≤12 variables only)\n'
             '  QAOA             Real Qiskit 2.x QAOAAnsatz + AerSampler\n\n'
             'QUANTUM DETAIL\n'
             '  • QUBO → Ising Hamiltonian via Pauli-Z mapping\n'
             '  • QAOAAnsatz  p=2 layers (cost + mixer)\n'
             '  • COBYLA classical optimiser (100 iterations)\n'
-            '  • 2048 shots on AerSimulator (statevector mode)\n\n'
+            '  • 2048 shots on AerSimulator (statevector mode)\n'
+            '  • Max 20 qubits; falls back to Greedy if exceeded\n\n'
             'KEYBOARD SHORTCUTS\n'
             '  F5   Load Data\n'
             '  F1   This help\n'

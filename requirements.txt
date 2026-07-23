@@ -2,13 +2,13 @@
 # Install: pip install -r requirements.txt
 
 # Qiskit 2.x (no qiskit-optimization or qiskit-algorithms needed)
-qiskit>=2.0.0
-qiskit-aer>=0.15.0
+qiskit==2.3.0
+qiskit-aer==0.17.2
 
 # Scientific computing
-numpy>=1.24.0
-scipy>=1.10.0
+numpy==2.3.2
+scipy==1.16.1
 
 # GUI
-pillow>=10.0.0
+pillow==11.3.0
 # tkinter ships with Python — no pip install required
