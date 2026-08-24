@@ -129,8 +129,15 @@ class QAOAOptimizer(BaseOptimizer):
             name=f"QAOA_p{self.qaoa_reps}"
         )
         n_params = ansatz.num_parameters
-        log(f"   Circuit: depth={ansatz.decompose().depth()}, "
-            f"parameters={n_params}")
+        decomposed = ansatz.decompose()
+        circuit_depth = decomposed.depth()
+        log(f"   Circuit: depth={circuit_depth}, parameters={n_params}")
+
+        # Capture text diagram (pre-transpile — more readable for students)
+        try:
+            circuit_text = str(decomposed.draw('text', fold=-1))
+        except Exception:
+            circuit_text = '(circuit diagram unavailable)'
 
         # Transpile to Aer basis gates once — reuse for every COBYLA eval
         simulator = AerSimulator(method='statevector')
@@ -192,6 +199,14 @@ class QAOAOptimizer(BaseOptimizer):
         trucks_used = self.count_trucks_used(assignments)
         assigned_ids = {a['shipment'].shipment_id for a in assignments}
 
+        # Pick the best valid bitstring for the qubit map display
+        best_bitstring = ''
+        for int_key, _ in sorted(quasi.items(), key=lambda kv: -kv[1])[:20]:
+            bs = format(int_key, f'0{n_qubits}b')
+            if qubo.decode_solution(bs):
+                best_bitstring = bs
+                break
+
         log(f"   ✓ QAOA assigned {len(assignments)}/{n_ships} shipments "
             f"| cost=€{metrics['cost']:,.0f} | CO₂={metrics['co2']:,.0f}kg "
             f"| time={elapsed:.1f}s")
@@ -214,6 +229,11 @@ class QAOAOptimizer(BaseOptimizer):
                 'final_energy':    opt_result.fun,
                 'shots':           self.shots,
                 'simulator':       'AerSimulator (statevector)',
+                'best_bitstring':  best_bitstring,
+                'shipments':       [s.shipment_id for s in self.shipments],
+                'trucks':          [t.truck_id for t in self.trucks],
+                'circuit_text':    circuit_text,
+                'circuit_depth':   circuit_depth,
             }
         )
 

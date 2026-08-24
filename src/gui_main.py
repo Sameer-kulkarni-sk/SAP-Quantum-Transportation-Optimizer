@@ -15,10 +15,6 @@ from PIL import Image, ImageTk
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from optimizers.classical.local_search import LocalSearchOptimizer
-from optimizers.classical.greedy_optimizer import GreedyOptimizer
-from optimizers.classical.genetic_algorithm import GeneticAlgorithm
-from optimizers.classical.exact_solver import ExactSolver
 from data_loader.csv_loader import CSVLoader
 
 try:
@@ -363,6 +359,11 @@ class SAPQuantumTransportGUI:
         self._nav_items: list = []
         self._active_nav = None
 
+        # ── Quantum parameter controls ────────────────────────────────────
+        self._size_var  = tk.StringVar(value='4x4')   # problem size
+        self._p_var     = tk.IntVar(value=2)           # QAOA depth
+        self._shots_var = tk.IntVar(value=2048)        # measurement shots
+
         root.title('SAP Quantum Transport Optimizer')
         root.geometry('1280x768')
         root.minsize(1024, 600)
@@ -443,12 +444,9 @@ class SAPQuantumTransportGUI:
         item('Data', '', None, section=True)
         item('Load Data',          '↓', self.load_data)
 
-        item('Algorithms', '', None, section=True)
-        item('Greedy Optimizer',   '▶', lambda: self._run('greedy'))
-        item('Local Search (SA)',  '⟳', lambda: self._run('local_search'))
-        item('Genetic Algorithm',  '⚙', lambda: self._run('genetic'))
-        item('Exact Solver',       '🎯', lambda: self._run('exact'))
+        item('Quantum', '', None, section=True)
         item('QAOA Quantum',       '⚛', lambda: self._run('qaoa'))
+        item('View Circuit',       '⊞', self._show_circuit)
 
         item('Analysis', '', None, section=True)
         item('Compare Results',    '≡', self._compare)
@@ -458,10 +456,80 @@ class SAPQuantumTransportGUI:
         item('Clear Console',      '✕', self._clear)
         item('Help',               '?', self._show_help)
 
+    def _build_controls(self, parent):
+        bar = tk.Frame(parent, bg=C['panel_bg'],
+                       highlightbackground=C['border'],
+                       highlightthickness=1)
+        bar.pack(fill=tk.X, pady=(0, 10))
+
+        def group(label):
+            f = tk.Frame(bar, bg=C['panel_bg'])
+            f.pack(side=tk.LEFT, padx=16, pady=6)
+            tk.Label(f, text=label,
+                     font=_font(FONT_SANS, 9, 'bold'),
+                     bg=C['panel_bg'], fg=C['text_secondary']).pack(anchor=tk.W)
+            return f
+
+        # Problem size
+        sf = group('Problem Size (qubits)')
+        for label, val in [('2×2  (4q)', '2x2'), ('3×3  (9q)', '3x3'),
+                           ('4×4 (16q)', '4x4'), ('5×4 (20q)', '5x4')]:
+            tk.Radiobutton(sf, text=label, variable=self._size_var, value=val,
+                           font=_font(FONT_SANS, 12), bg=C['panel_bg'],
+                           fg=C['text_primary'], selectcolor=C['primary'],
+                           activebackground=C['panel_bg'], indicatoron=True,
+                           relief=tk.FLAT, padx=8, pady=4).pack(side=tk.LEFT, padx=4)
+
+        tk.Frame(bar, bg=C['border'], width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6)
+
+        # QAOA depth p
+        pf = group('QAOA Depth  p')
+        for val in [1, 2, 3]:
+            tk.Radiobutton(pf, text=f'  p = {val}  ', variable=self._p_var, value=val,
+                           font=_font(FONT_SANS, 12), bg=C['panel_bg'],
+                           fg=C['text_primary'], selectcolor=C['primary'],
+                           activebackground=C['panel_bg'], indicatoron=True,
+                           relief=tk.FLAT, padx=8, pady=4).pack(side=tk.LEFT, padx=4)
+
+        tk.Frame(bar, bg=C['border'], width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6)
+
+        # Shots
+        shf = group('Shots')
+        for val in [256, 512, 2048]:
+            tk.Radiobutton(shf, text=f'  {val}  ', variable=self._shots_var, value=val,
+                           font=_font(FONT_SANS, 12), bg=C['panel_bg'],
+                           fg=C['text_primary'], selectcolor=C['primary'],
+                           activebackground=C['panel_bg'], indicatoron=True,
+                           relief=tk.FLAT, padx=8, pady=4).pack(side=tk.LEFT, padx=4)
+
+        # Fix 4 — live warning for dangerous combo (5×4 + p≥2)
+        self._combo_warn = tk.Label(bar, text='',
+                                    font=_font(FONT_SANS, 9, 'bold'),
+                                    bg=C['panel_bg'], fg=C['warning'])
+        self._combo_warn.pack(side=tk.RIGHT, padx=16)
+
+        def _check_combo(*_):
+            size = self._size_var.get()
+            p    = self._p_var.get()
+            if size == '5x4' and p >= 2:
+                self._combo_warn.config(
+                    text=f'⚠  5×4 + p={p} may take 10–30 min')
+            elif size in ('4x4', '5x4') and p == 3:
+                self._combo_warn.config(
+                    text=f'⚠  {size} + p=3 is slow — consider p=1 or p=2')
+            else:
+                self._combo_warn.config(text='')
+
+        self._size_var.trace_add('write', _check_combo)
+        self._p_var.trace_add('write', _check_combo)
+
     def _build_content(self, parent):
         content = tk.Frame(parent, bg=C['page_bg'])
         content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True,
                      padx=12, pady=10)
+
+        # ── Quantum parameter controls ────────────────────────────────────
+        self._build_controls(content)
 
         # ── KPI tiles row ─────────────────────────────────────────────────
         tile_row = tk.Frame(content, bg=C['page_bg'], height=90)
@@ -491,8 +559,8 @@ class SAPQuantumTransportGUI:
         L.write('')
         L.write('  Quick Start:', 'info')
         L.write('    1.  Load Data          — import shipments, trucks, lanes')
-        L.write('    2.  Run an Algorithm   — Greedy, Local Search, Genetic, Exact, or QAOA')
-        L.write('    3.  Compare Results    — side-by-side algorithm comparison')
+        L.write('    2.  Run QAOA Quantum   — quantum circuit optimises assignments')
+        L.write('    3.  Compare Results    — run multiple times to compare QAOA configurations')
         L.write('')
         q_status = 'AVAILABLE  (Qiskit 2.x + AerSimulator)' if QUANTUM_AVAILABLE \
                    else 'NOT AVAILABLE  (install: pip install qiskit qiskit-aer scipy)'
@@ -537,7 +605,7 @@ class SAPQuantumTransportGUI:
         if self.data is None:
             messagebox.showwarning('No Data', 'Please load data first (↓ Load Data).')
             return
-        nav_map = {'greedy': 1, 'local_search': 2, 'genetic': 3, 'exact': 4, 'qaoa': 5}
+        nav_map = {'qaoa': 1}
         self._activate_nav(nav_map.get(algo, 0))
         self.status.set(f'Running {algo} …', busy=True)
         t = threading.Thread(target=self._run_thread, args=(algo,), daemon=True)
@@ -545,11 +613,7 @@ class SAPQuantumTransportGUI:
 
     def _run_thread(self, algo: str):
         try:
-            label = {'greedy':      'Greedy Optimizer',
-                     'local_search':'Local Search (Simulated Annealing)',
-                     'genetic':     'Genetic Algorithm',
-                     'exact':       'Exact Solver',
-                     'qaoa':        'QAOA Quantum'}[algo]
+            label = 'QAOA Quantum'
 
             self.log.write('')
             self.log.write('─' * 72, 'sep')
@@ -560,50 +624,49 @@ class SAPQuantumTransportGUI:
             trucks = self.data['trucks']
             lanes  = self.data['lanes']
 
-            if algo == 'greedy':
-                result = GreedyOptimizer(ships, trucks, lanes).optimize(
-                    objective='balanced')
-
-            elif algo == 'local_search':
-                result = LocalSearchOptimizer(ships, trucks, lanes).optimize(
-                    max_iterations=500)
-
-            elif algo == 'genetic':
-                result = GeneticAlgorithm(
-                    ships, trucks, lanes,
-                    population_size=50, generations=100
-                ).optimize(objective='balanced')
-
-            elif algo == 'exact':
-                n_vars = len(ships) * len(trucks)
-                if n_vars > 12:
-                    self.log.write(
-                        f'  ✗  Problem too large for exact solver '
-                        f'({n_vars} variables > 12). '
-                        f'Use Simulated Annealing or Genetic Algorithm instead.', 'error')
-                    self.status.set('Exact solver: problem too large', color=C['error'])
-                    return
-                self.log.write(f'  Problem size: {n_vars} variables', 'info')
-                result = ExactSolver(ships, trucks, lanes).optimize(objective='balanced')
-
-            elif algo == 'qaoa':
+            if algo == 'qaoa':
                 if not QUANTUM_AVAILABLE:
                     self.log.write('  ✗  Quantum packages not available.', 'error')
                     self.status.set('Quantum not available', color=C['error'])
                     return
-                # Demo: 4 shipments × 4 trucks = 16 qubits
-                sub_ships  = ships[:4]
-                sub_trucks = trucks[:4]
+                size_map = {'2x2': (2, 2), '3x3': (3, 3), '4x4': (4, 4), '5x4': (5, 4)}
+                n_s, n_t = size_map.get(self._size_var.get(), (4, 4))
+                p      = self._p_var.get()
+                shots  = self._shots_var.get()
+                n_q    = n_s * n_t
+
+                # Fix 1 — scale max_iter with p so COBYLA has enough budget
+                max_iter = 50 * p   # p=1→50, p=2→100, p=3→150
+
+                # Fix 2 — warn when shots may be too low for the qubit count
+                min_shots = (2 ** n_q) // 4
+                if shots < min_shots:
+                    self.log.write(
+                        f'  ⚠  {shots} shots may be too low for {n_q} qubits '
+                        f'(recommended ≥ {min_shots}). '
+                        f'COBYLA energy estimates will be noisy.', 'warn')
+
+                # Fix 3 — runtime warning for large+deep combinations
+                if n_q > 16 and p >= 2:
+                    self.log.write(
+                        f'  ⚠  {n_q} qubits × p={p}: this combination may take '
+                        f'10–30 minutes on CPU. Consider reducing size or depth.', 'warn')
+
+                sub_ships  = ships[:n_s]
+                sub_trucks = trucks[:n_t]
                 self.log.write(
-                    f'  Sub-problem: {len(sub_ships)} shipments × '
-                    f'{len(sub_trucks)} trucks = '
-                    f'{len(sub_ships)*len(sub_trucks)} qubits', 'q')
+                    f'  Sub-problem: {n_s} shipments × {n_t} trucks = {n_q} qubits'
+                    f'  |  p={p}  |  shots={shots}  |  max_iter={max_iter}', 'q')
+                self._show_qubit_map_before(sub_ships, sub_trucks)
                 result = QAOAOptimizer(
                     sub_ships, sub_trucks, lanes,
-                    qaoa_reps=2, max_iter=100, shots=2048
+                    qaoa_reps=p, max_iter=max_iter, shots=shots
                 ).optimize(progress_callback=lambda m: self.log.write(f'  {m}', 'q'))
+                result.algorithm = f'QAOA {n_s}×{n_t} ({n_q}q) p={p} shots={shots}'
 
             self._show_result(result)
+            if algo == 'qaoa':
+                self._show_qubit_map_after(result)
             self.results.append(result)
             self.status.set(f'{label} completed  |  '
                             f'€{result.total_cost:,.0f}  ·  '
@@ -636,8 +699,10 @@ class SAPQuantumTransportGUI:
         self.log.write(f'  {"Shipments Unassigned":<{W}} {r.shipments_unassigned:>14}')
 
         if r.metadata:
+            _skip = {'unassigned_shipments', 'cost_history',
+                     'circuit_text', 'best_bitstring', 'shipments', 'trucks'}
             for k, v in r.metadata.items():
-                if k not in ('unassigned_shipments', 'cost_history'):
+                if k not in _skip:
                     self.log.write(f'  {"  · " + str(k):<{W}} {str(v):>14}', 'sep')
 
         # First 5 assignments
@@ -659,43 +724,231 @@ class SAPQuantumTransportGUI:
                     f'  … and {len(r.assignments) - 5} more assignments', 'sep')
         self.log.write('─' * 72, 'sep')
 
+    def _show_qubit_map_before(self, ships, trucks):
+        n_t = len(trucks)
+        self.log.write('', '')
+        self.log.write('  QUBIT MAP  (each qubit = one possible assignment)', 'hdr')
+        self.log.write(f'  {"Qubit":<7}{"Shipment":<14}{"Truck":<14}{"Meaning"}', 'sep')
+        self.log.write('  ' + '─' * 58, 'sep')
+        for i, s in enumerate(ships):
+            for j, t in enumerate(trucks):
+                q = i * n_t + j
+                self.log.write(
+                    f'  q[{q:<3}]  {s.shipment_id:<14}{t.truck_id:<14}'
+                    f'Assign {s.shipment_id} → {t.truck_id}', 'q')
+        self.log.write('  ' + '─' * 58, 'sep')
+        self.log.write('  Quantum circuit will find which qubits should be |1⟩', 'info')
+        self.log.write('', '')
+
+    def _show_qubit_map_after(self, result):
+        bs        = result.metadata.get('best_bitstring', '')
+        ship_ids  = result.metadata.get('shipments', [])
+        truck_ids = result.metadata.get('trucks', [])
+        if not bs or not ship_ids or not truck_ids:
+            return
+        n_t = len(truck_ids)
+        assigned = {(a['shipment'].shipment_id, a['truck'].truck_id)
+                    for a in result.assignments}
+        self.log.write('', '')
+        self.log.write('  QUBIT MAP  (measurement result)', 'hdr')
+        self.log.write(f'  {"Qubit":<7}{"Shipment":<14}{"Truck":<14}{"Measured":<10}{""}', 'sep')
+        self.log.write('  ' + '─' * 58, 'sep')
+        for i, sid in enumerate(ship_ids):
+            for j, tid in enumerate(truck_ids):
+                q   = i * n_t + j
+                bit = bs[q] if q < len(bs) else '?'
+                tag = 'ok' if bit == '1' else 'sep'
+                mark = '  ✓ assigned' if (sid, tid) in assigned else ''
+                self.log.write(
+                    f'  q[{q:<3}]  {sid:<14}{tid:<14}|{bit}⟩{mark}', tag)
+        self.log.write('  ' + '─' * 58, 'sep')
+        self.log.write('', '')
+
+    def _show_circuit(self):
+        self._activate_nav(2)
+        if not self.results:
+            messagebox.showinfo('Circuit Viewer', 'Run QAOA first to view the circuit.')
+            return
+        r = self.results[-1]
+        circuit_text  = r.metadata.get('circuit_text', '')
+        circuit_depth = r.metadata.get('circuit_depth', '?')
+        n_qubits      = r.metadata.get('n_qubits', '?')
+        p             = r.metadata.get('qaoa_reps', '?')
+        if not circuit_text:
+            messagebox.showinfo('Circuit Viewer', 'No circuit data available.')
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(f'QAOA Circuit — {n_qubits} qubits  p={p}  depth={circuit_depth}')
+        win.geometry('1200x820')
+        win.configure(bg=C['page_bg'])
+
+        # Header
+        hdr = tk.Frame(win, bg=C['shell_bg'], height=44)
+        hdr.pack(fill=tk.X)
+        hdr.pack_propagate(False)
+        tk.Label(hdr,
+                 text=f'  ⚛  QAOA Circuit  ·  {n_qubits} qubits  ·  p={p}  ·  depth={circuit_depth}',
+                 font=_font(FONT_SANS, 12, 'bold'),
+                 bg=C['shell_bg'], fg=C['shell_text'],
+                 anchor=tk.W).pack(side=tk.LEFT, padx=12, pady=8)
+        tk.Label(hdr, text='Each row = one qubit  ·  Left → right = time  ·  Gates shown at QAOA block level',
+                 font=_font(FONT_SANS, 9),
+                 bg=C['shell_bg'], fg='#A0B8D0',
+                 anchor=tk.E).pack(side=tk.RIGHT, padx=16)
+
+        # ── Info panel (notation guide + qubit legend) ────────────────────
+        info = tk.Frame(win, bg=C['panel_bg'],
+                        highlightbackground=C['border'], highlightthickness=1)
+        info.pack(fill=tk.X, padx=8, pady=(6, 0))
+
+        # Left column: notation guide
+        left = tk.Frame(info, bg=C['panel_bg'])
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=14, pady=8)
+        tk.Label(left, text='Circuit Notation',
+                 font=_font(FONT_SANS, 10, 'bold'),
+                 bg=C['panel_bg'], fg=C['text_primary'],
+                 anchor=tk.W).pack(anchor=tk.W)
+        for line in [
+            'exp(-it H_C)(γ)  →  Cost unitary: rotates state toward lower-cost assignments',
+            'exp(-it H_B)(β)  →  Mixer unitary: explores different assignments (superposition)',
+            'H                →  Hadamard: puts qubit into equal superposition (start of QAOA)',
+            'I  (in Pauli string)  →  Identity: this qubit not involved in this term',
+            'Z  (in Pauli string)  →  Cost/penalty on a single qubit (one assignment)',
+            'ZZ (in Pauli string)  →  Two-qubit penalty (conflict between two assignments)',
+        ]:
+            tk.Label(left, text=f'  {line}',
+                     font=_font(FONT_MONO, 9),
+                     bg=C['panel_bg'], fg=C['text_secondary'],
+                     anchor=tk.W).pack(anchor=tk.W)
+
+        # Separator
+        tk.Frame(info, bg=C['border'], width=1).pack(side=tk.LEFT, fill=tk.Y, pady=8)
+
+        # Right column: qubit → assignment legend
+        right = tk.Frame(info, bg=C['panel_bg'])
+        right.pack(side=tk.LEFT, fill=tk.BOTH, padx=14, pady=8)
+        tk.Label(right, text='Qubit Map',
+                 font=_font(FONT_SANS, 10, 'bold'),
+                 bg=C['panel_bg'], fg=C['text_primary'],
+                 anchor=tk.W).pack(anchor=tk.W)
+        ship_ids  = r.metadata.get('shipments', [])
+        truck_ids = r.metadata.get('trucks', [])
+        n_t = len(truck_ids)
+        assigned = {(a['shipment'].shipment_id, a['truck'].truck_id)
+                    for a in r.assignments}
+        for i, sid in enumerate(ship_ids):
+            for j, tid in enumerate(truck_ids):
+                q    = i * n_t + j
+                mark = '  ✓' if (sid, tid) in assigned else ''
+                tk.Label(right,
+                         text=f'  q[{q}]  {sid} → {tid}{mark}',
+                         font=_font(FONT_MONO, 9),
+                         bg=C['panel_bg'],
+                         fg=C['success'] if mark else C['text_secondary'],
+                         anchor=tk.W).pack(anchor=tk.W)
+
+        # Scrollable text with horizontal + vertical scrollbars
+        frame = tk.Frame(win, bg=C['panel_bg'])
+        frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        vscroll = tk.Scrollbar(frame, orient=tk.VERTICAL)
+        hscroll = tk.Scrollbar(frame, orient=tk.HORIZONTAL)
+        txt = tk.Text(frame,
+                      font=_font(FONT_MONO, 11),
+                      bg=C['log_bg'], fg=C['text_primary'],
+                      wrap=tk.NONE,
+                      relief=tk.FLAT, bd=0,
+                      padx=12, pady=8,
+                      yscrollcommand=vscroll.set,
+                      xscrollcommand=hscroll.set,
+                      state=tk.NORMAL)
+        vscroll.config(command=txt.yview)
+        hscroll.config(command=txt.xview)
+        vscroll.pack(side=tk.RIGHT,  fill=tk.Y)
+        hscroll.pack(side=tk.BOTTOM, fill=tk.X)
+        txt.pack(fill=tk.BOTH, expand=True)
+
+        txt.insert(tk.END, circuit_text)
+        txt.config(state=tk.DISABLED)
+
+        tk.Button(win, text='Close',
+                  font=_font(FONT_SANS, 10, 'bold'),
+                  bg=C['primary'], fg='#FFFFFF',
+                  activebackground=C['primary_press'],
+                  relief=tk.FLAT, padx=20, pady=4,
+                  command=win.destroy).pack(pady=(0, 8))
+
     # ── Compare ──────────────────────────────────────────────────────────────
 
     def _compare(self):
-        self._activate_nav(6)
+        self._activate_nav(3)
         if len(self.results) < 2:
-            messagebox.showinfo('Compare', 'Run at least 2 algorithms first.')
+            messagebox.showinfo('Compare', 'Run QAOA at least twice to compare configurations.')
             return
 
         self.log.write('')
         self.log.write('─' * 72, 'sep')
-        self.log.write('  ALGORITHM COMPARISON', 'hdr')
+        self.log.write('  QAOA CONFIGURATION COMPARISON', 'hdr')
         self.log.write('─' * 72, 'sep')
-        self.log.write(
-            f'  {"Algorithm":<32}{"Cost (€)":>12}{"CO₂ (kg)":>12}'
-            f'{"Assigned":>10}{"Time (s)":>10}', 'sep')
-        self.log.write('  ' + '─' * 66, 'sep')
 
+        # Group results by problem size (n_qubits)
+        groups = {}
         for r in self.results:
-            self.log.write(
-                f'  {r.algorithm:<32}'
-                f'{r.total_cost:>12,.0f}'
-                f'{r.total_co2:>12,.0f}'
-                f'{r.shipments_assigned:>10}'
-                f'{r.computation_time:>10.3f}')
+            nq = r.metadata.get('n_qubits', 0)
+            groups.setdefault(nq, []).append(r)
 
-        self.log.write('  ' + '─' * 66, 'sep')
-        best_cost = min(self.results, key=lambda r: r.total_cost)
-        best_co2  = min(self.results, key=lambda r: r.total_co2)
-        self.log.write(f'  ★  Best Cost : {best_cost.algorithm}  (€{best_cost.total_cost:,.0f})', 'ok')
-        self.log.write(f'  ★  Best CO₂  : {best_co2.algorithm}  ({best_co2.total_co2:,.0f} kg)', 'ok')
+        mixed = len(groups) > 1
+        if mixed:
+            self.log.write(
+                '  ⚠  Runs have different problem sizes — only runs within the',
+                'warn')
+            self.log.write(
+                '     same qubit count are directly comparable.', 'warn')
+            self.log.write('', '')
+
+        hdr = (f'  {"Configuration":<42}{"Assigned":>10}'
+               f'{"Cost (€)":>14}{"CO₂ (kg)":>14}{"Energy":>11}{"Time (s)":>11}')
+        for nq, runs in sorted(groups.items()):
+            self.log.write(f'  ── {nq} qubits ──', 'sep')
+            self.log.write(hdr, 'sep')
+            self.log.write('  ' + '─' * 80, 'sep')
+            for r in runs:
+                energy = r.metadata.get('final_energy', float('nan'))
+                energy_str = f'{energy:>11.2f}' if energy == energy else '        N/A'
+                self.log.write(
+                    f'  {r.algorithm:<42}'
+                    f'{r.shipments_assigned:>10}'
+                    f'{r.total_cost:>14,.0f}'
+                    f'{r.total_co2:>14,.0f}'
+                    f'{energy_str}'
+                    f'{r.computation_time:>11.3f}')
+            self.log.write('  ' + '─' * 80, 'sep')
+
+            # Insights — only meaningful within same qubit count
+            most_assigned = max(runs, key=lambda r: r.shipments_assigned)
+            fastest       = min(runs, key=lambda r: r.computation_time)
+            valid_energy  = [r for r in runs
+                             if r.metadata.get('final_energy') == r.metadata.get('final_energy')]
+            best_energy   = min(valid_energy,
+                                key=lambda r: r.metadata['final_energy']) if valid_energy else None
+
+            self.log.write(f'  ⚛  Most assigned : {most_assigned.algorithm}'
+                           f'  ({most_assigned.shipments_assigned} shipments)', 'ok')
+            self.log.write(f'  ⚡  Fastest run   : {fastest.algorithm}'
+                           f'  ({fastest.computation_time:.2f}s)', 'ok')
+            if best_energy:
+                self.log.write(f'  ↓  Best energy  : {best_energy.algorithm}'
+                               f'  (⟨H_C⟩={best_energy.metadata["final_energy"]:.3f})', 'ok')
+            self.log.write('', '')
+
         self.log.write('─' * 72, 'sep')
-        self.status.set('Comparison complete')
+        self.status.set('Configuration comparison complete')
 
     # ── Export ───────────────────────────────────────────────────────────────
 
     def _export(self):
-        self._activate_nav(7)
+        self._activate_nav(4)
         if not self.results:
             messagebox.showinfo('Export', 'No results to export yet.')
             return
@@ -710,7 +963,7 @@ class SAPQuantumTransportGUI:
     # ── Clear ────────────────────────────────────────────────────────────────
 
     def _clear(self):
-        self._activate_nav(8)
+        self._activate_nav(5)
         self.results.clear()
         self.log.clear()
         self.kpi_cost.update('—')
@@ -723,21 +976,22 @@ class SAPQuantumTransportGUI:
     # ── Help ─────────────────────────────────────────────────────────────────
 
     def _show_help(self):
-        self._activate_nav(9)
+        self._activate_nav(6)
         messagebox.showinfo(
             'SAP Quantum Transport Optimizer — Help',
-            'ALGORITHMS\n'
-            '  Greedy           Fast baseline heuristic (priority sort)\n'
-            '  Local Search     Simulated annealing over Greedy solution\n'
-            '  Genetic          Evolutionary optimizer (50 pop, 100 gen)\n'
-            '  Exact Solver     Optimal solution (problems ≤12 variables only)\n'
-            '  QAOA             Real Qiskit 2.x QAOAAnsatz + AerSampler\n\n'
-            'QUANTUM DETAIL\n'
+            'QUANTUM ALGORITHM\n'
+            '  QAOA   Real Qiskit 2.x QAOAAnsatz + AerSampler\n\n'
+            'HOW IT WORKS\n'
+            '  • Shipment-truck pairs encoded as qubits (1 qubit per pair)\n'
             '  • QUBO → Ising Hamiltonian via Pauli-Z mapping\n'
             '  • QAOAAnsatz  p=2 layers (cost + mixer)\n'
-            '  • COBYLA classical optimiser (100 iterations)\n'
-            '  • 2048 shots on AerSimulator (statevector mode)\n'
-            '  • Max 20 qubits; falls back to Greedy if exceeded\n\n'
+            '  • COBYLA classical optimiser tunes variational parameters\n'
+            '  • 2048 shots on AerSimulator measure the best assignment\n'
+            '  • Qubit map shows exactly which qubit → which assignment\n\n'
+            'CURRENT STATE OF QUANTUM COMPUTING\n'
+            '  • Quantum advantage for optimisation not yet achieved\n'
+            '  • This demo shows the approach SAP is exploring for future\n'
+            '    logistics and supply chain optimisation\n\n'
             'KEYBOARD SHORTCUTS\n'
             '  F5   Load Data\n'
             '  F1   This help\n'
