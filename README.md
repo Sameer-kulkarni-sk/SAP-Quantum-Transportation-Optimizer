@@ -24,8 +24,7 @@ Given a set of shipments and trucks, the app encodes the assignment problem as a
 
 ### Prerequisites
 - Python 3.8+
-- Raspberry Pi (optional) — tested on Raspberry Pi 5 via RasQberry
-
+- Raspberry Pi 
 ### Local
 ```bash
 pip install -r requirements.txt
