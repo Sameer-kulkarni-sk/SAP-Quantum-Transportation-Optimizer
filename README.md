@@ -1,135 +1,108 @@
 
-# Quantum Transport Optimizer for RasQberry
+# SAP Quantum Transportation Optimizer
 
-An educational transport optimization application comparing classical and quantum algorithms for vehicle routing problems. Designed for SAP TM-like data with support for CSV/REST input and touchscreen display on Raspberry Pi.
+An educational quantum computing demo for [RasQberry](https://github.com/JanLahmann/RasQberry-Two), built by SAP. It teaches students how the Quantum Approximate Optimization Algorithm (QAOA) solves a real-world transport assignment problem — step by step, on a Raspberry Pi.
 
-> ** Important Note on Quantum Computing**: This project demonstrates quantum algorithms for educational purposes. At the current state of quantum computing technology (NISQ era), **quantum advantage has not been achieved** for optimization problems. Classical algorithms will consistently outperform quantum approaches on available hardware. QAOA is included for research, education, and future readiness.
+> **Note on Quantum Computing:** At the current NISQ era of quantum computing, quantum advantage has not been achieved for optimization problems. This demo is designed for education and research — to understand *how* QAOA works, not to claim it outperforms classical approaches.
 
-## Features
+---
 
-- **Comprehensive Classical Algorithms**:
-  - **Greedy Optimizer**: Fast baseline heuristic
-  - **Simulated Annealing**: Global search with adaptive cooling (Pi-optimized)
-  - **Genetic Algorithm**: Evolutionary optimization approach
-  - **Exact Solver**: Optimal solutions for small problems (<12 variables)
+## What It Does
 
-- **Quantum Algorithm (Educational)**:
-  - **QAOA**: Quantum Approximate Optimization Algorithm
-  - For research and educational purposes
-  - Demonstrates quantum computing concepts
-  - Not recommended for production use
+Given a set of shipments and trucks, the app encodes the assignment problem as a QUBO (Quadratic Unconstrained Binary Optimization), maps it to an Ising Hamiltonian, and runs QAOA on Qiskit's Aer simulator. Students can interactively explore:
 
-- **Multi-Objective Optimization**:
-  - Minimize transportation costs
-  - Minimize CO₂ emissions
-  - Balance cost and environmental impact
+- **Problem size** — 2×2 (4 qubits) up to 5×4 (20 qubits)
+- **QAOA depth** — p=1, p=2, or p=3 layers
+- **Shot count** — 256, 512, or 2048 measurement shots
+- **Qubit map** — see exactly which qubit encodes which shipment→truck assignment
+- **Circuit viewer** — view the actual Qiskit quantum circuit with a Pauli notation guide
+- **Compare runs** — compare multiple QAOA configurations side by side, grouped by qubit count
 
-- **Flexible Data Input**:
-  - CSV files
-  - REST API integration
-  - Sample datasets included
-
-- **Rich Visualization**:
-  - CLI interface with detailed results
-  - Touchscreen GUI (coming soon)
-  - LED matrix display support (optional)
-  - Comparison tables and metrics
+---
 
 ## Installation
 
 ### Prerequisites
 - Python 3.8+
-- RasQberry device (optional, for deployment)
-- `sshpass` for deployment (macOS: `brew install hudochenkov/sshpass/sshpass`)
+- Raspberry Pi (optional) — tested on Raspberry Pi 5 via RasQberry
 
-### Local Installation
+### Local
 ```bash
 pip install -r requirements.txt
+cd src
+python gui_main.py
 ```
 
-### Deploy to RasQberry
-```bash
-# Deploy with password authentication
-./scripts/deploy_to_rasqberry.sh YOUR_RASQBERRY_IP [PASSWORD]
+### Via RasQberry Catalog
+This demo is listed in the RasQberry external demo catalog. Install it directly from the RasQberry menu — it fetches the repo, validates the manifest, installs dependencies, and launches the GUI automatically.
 
-# Or use the simpler script
-./DEPLOY.sh YOUR_RASQBERRY_IP [PASSWORD]
-```
-
-After deployment, a desktop icon will be automatically created on the RasQberry device for easy access to the GUI application.
+---
 
 ## Quick Start
 
-### 1. Run with Sample Data
-
+Launch the GUI:
 ```bash
 cd src
-python main.py
+python gui_main.py
 ```
 
-This will:
-- Load sample shipments, trucks, and lanes from CSV files
-- Run both classical and quantum optimizers
-- Display comparison results
+1. Click **Load Data** to load shipments, trucks, and lanes from CSV
+2. Adjust **Problem Size**, **QAOA Depth**, and **Shots** in the control bar
+3. Click **Run QAOA** — watch the optimizer run in the console
+4. Click **View Circuit** to inspect the Qiskit quantum circuit
+5. Run again with different settings and click **Compare Results**
 
-### 2. Using the CLI Interface
+---
 
-```python
-from data_loader.csv_loader import CSVLoader
-from optimizers.classical.greedy_optimizer import GreedyOptimizer
-from optimizers.quantum.qaoa_optimizer import QAOAOptimizer
+## How QAOA Works (for students)
 
-# Load data
-loader = CSVLoader("../data/input")
-data = loader.load_all()
+| Step | What happens |
+|---|---|
+| QUBO formulation | Assignment problem → quadratic cost matrix Q |
+| Ising mapping | Q → Pauli-Z Hamiltonian H_C = Σ h_i Z_i + Σ J_ij Z_i Z_j |
+| QAOAAnsatz | p layers of cost unitary exp(-iγ H_C) + mixer unitary exp(-iβ H_B) |
+| COBYLA | Classical optimizer tunes 2p parameters (γ, β) to minimize ⟨H_C⟩ |
+| Measurement | Sample the optimised circuit → decode best bitstring → assignments |
 
-# Run greedy optimizer
-greedy = GreedyOptimizer(
-    data['shipments'],
-    data['trucks'],
-    data['lanes']
-)
-greedy_result = greedy.optimize(objective='balanced')
-print(greedy_result.summary())
+Qubit index formula: qubit `i × n_trucks + j` = Shipment `i` → Truck `j`
 
-# Run QAOA optimizer
-qaoa = QAOAOptimizer(
-    data['shipments'],
-    data['trucks'],
-    data['lanes'],
-    qaoa_reps=3
-)
-qaoa_result = qaoa.optimize()
-print(qaoa_result.summary())
+---
+
+## Project Structure
+
+```
+src/
+  gui_main.py                        # Main GUI entry point (SAP Fiori design)
+  main.py                            # Interactive CLI
+  optimizers/
+    quantum/
+      qaoa_optimizer.py              # QAOA with Qiskit 2.x + Aer
+      qubo_formulation.py            # QUBO → Ising Hamiltonian
+    classical/
+      greedy_optimizer.py            # Greedy fallback (used internally)
+  data_loader/csv_loader.py          # Loads shipments, trucks, lanes from CSV
+data/input/                          # Sample CSV datasets
+rqb-demo.json                        # RasQberry manifest
+requirements.txt                     # Pinned dependencies
+LICENSE                              # MIT
 ```
 
-### 3. Compare Results
+---
 
-```python
-print(f"\n{'='*60}")
-print("COMPARISON")
-print(f"{'='*60}")
-print(f"{'Algorithm':<30} {'Cost (€)':<15} {'CO₂ (kg)':<15}")
-print(f"{'-'*60}")
-print(f"{'Greedy':<30} {greedy_result.total_cost:<15.2f} {greedy_result.total_co2:<15.2f}")
-print(f"{'QAOA':<30} {qaoa_result.total_cost:<15.2f} {qaoa_result.total_co2:<15.2f}")
-print(f"{'-'*60}")
+## Dependencies
 
-# Calculate improvements
-cost_improvement = ((greedy_result.total_cost - qaoa_result.total_cost) / 
-                   greedy_result.total_cost * 100)
-co2_improvement = ((greedy_result.total_co2 - qaoa_result.total_co2) / 
-                  greedy_result.total_co2 * 100)
+All pinned for reproducible installs on ARM64 (Raspberry Pi):
 
-print(f"Cost Improvement: {cost_improvement:+.2f}%")
-print(f"CO₂ Improvement: {co2_improvement:+.2f}%")
+```
+qiskit==2.3.0
+qiskit-aer==0.17.2
+numpy==2.2.6
+scipy==1.15.3
+pillow==11.2.1
 ```
 
+---
 
+## License
 
-This will:
-1. Run all available optimizers on the same problem
-2. Compare against optimal solution (if problem is small enough)
-3. Calculate optimality gaps for each algorithm
-4. Generate detailed performance report
-5. Provide recommendations based on results
+MIT — see [LICENSE](LICENSE)
