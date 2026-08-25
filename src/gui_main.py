@@ -472,37 +472,32 @@ class SAPQuantumTransportGUI:
                      bg=C['panel_bg'], fg=C['text_secondary']).pack(anchor=tk.W)
             return f
 
+        def radio(parent, text, variable, value):
+            tk.Radiobutton(parent, text=f' {text} ', variable=variable, value=value,
+                           font=_font(FONT_SANS, 11), bg=C['panel_bg'],
+                           fg=C['text_primary'], selectcolor=C['nav_active_bg'],
+                           activebackground=C['nav_hover'], indicatoron=False,
+                           relief=tk.SOLID, bd=1, padx=6, pady=3).pack(side=tk.LEFT, padx=3)
+
         # Problem size
         sf = group('Problem Size (qubits)')
         for label, val in [('2×2  (4q)', '2x2'), ('3×3  (9q)', '3x3'),
                            ('4×4 (16q)', '4x4'), ('5×4 (20q)', '5x4')]:
-            tk.Radiobutton(sf, text=label, variable=self._size_var, value=val,
-                           font=_font(FONT_SANS, 12), bg=C['panel_bg'],
-                           fg=C['text_primary'], selectcolor=C['primary'],
-                           activebackground=C['panel_bg'], indicatoron=True,
-                           relief=tk.FLAT, padx=8, pady=4).pack(side=tk.LEFT, padx=4)
+            radio(sf, label, self._size_var, val)
 
         tk.Frame(bar, bg=C['border'], width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6)
 
         # QAOA depth p
         pf = group('QAOA Depth  p')
         for val in [1, 2, 3]:
-            tk.Radiobutton(pf, text=f'  p = {val}  ', variable=self._p_var, value=val,
-                           font=_font(FONT_SANS, 12), bg=C['panel_bg'],
-                           fg=C['text_primary'], selectcolor=C['primary'],
-                           activebackground=C['panel_bg'], indicatoron=True,
-                           relief=tk.FLAT, padx=8, pady=4).pack(side=tk.LEFT, padx=4)
+            radio(pf, f'p = {val}', self._p_var, val)
 
         tk.Frame(bar, bg=C['border'], width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6)
 
         # Shots
         shf = group('Shots')
         for val in [256, 512, 2048]:
-            tk.Radiobutton(shf, text=f'  {val}  ', variable=self._shots_var, value=val,
-                           font=_font(FONT_SANS, 12), bg=C['panel_bg'],
-                           fg=C['text_primary'], selectcolor=C['primary'],
-                           activebackground=C['panel_bg'], indicatoron=True,
-                           relief=tk.FLAT, padx=8, pady=4).pack(side=tk.LEFT, padx=4)
+            radio(shf, str(val), self._shots_var, val)
 
         # Fix 4 — live warning for dangerous combo (5×4 + p≥2)
         self._combo_warn = tk.Label(bar, text='',
