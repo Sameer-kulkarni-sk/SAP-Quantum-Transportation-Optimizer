@@ -11,4 +11,5 @@ scipy==1.16.1
 
 # GUI
 pillow==11.3.0
+cairosvg>=2.7.0
 # tkinter ships with Python — no pip install required

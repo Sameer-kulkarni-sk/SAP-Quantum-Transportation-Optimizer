@@ -54,8 +54,13 @@ C = {
     'log_sep':       '#6A6D70',
 }
 
-FONT_SANS  = 'Helvetica Neue'   # macOS; falls back to Arial on other platforms
-FONT_MONO  = 'Menlo'            # macOS monospace; Consolas on Windows
+import platform as _platform
+if _platform.system() == 'Darwin':
+    FONT_SANS = 'Helvetica Neue'
+    FONT_MONO = 'Menlo'
+else:
+    FONT_SANS = 'DejaVu Sans'
+    FONT_MONO = 'DejaVu Sans Mono'
 
 
 def _font(family, size, weight='normal'):
@@ -388,13 +393,10 @@ class SAPQuantumTransportGUI:
         if svg.exists():
             # Rasterize SVG once; cache the PNG next to the project root
             if not cached_png.exists():
-                import subprocess
                 try:
-                    subprocess.run(
-                        ['sips', '-s', 'format', 'png',
-                         str(svg), '--out', str(cached_png)],
-                        check=True, capture_output=True
-                    )
+                    import cairosvg
+                    cairosvg.svg2png(url=str(svg), write_to=str(cached_png),
+                                     output_height=40)
                 except Exception:
                     pass
             if cached_png.exists():
