@@ -62,6 +62,7 @@ Thumbs.db
 data/output/*.json
 data/output/*.csv
 *.log
+sap_logo_cached.png
 
 # Sensitive deployment files (SSH credentials, IPs, passwords)
 FINAL_DEPLOY.sh

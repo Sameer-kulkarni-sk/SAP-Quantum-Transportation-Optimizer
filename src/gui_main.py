@@ -676,7 +676,7 @@ class SAPQuantumTransportGUI:
             self.status.set(f'Error in {algo}', color=C['error'])
 
     def _show_result(self, r):
-        n_total = len(self.data['shipments']) if self.data else r.shipments_assigned
+        n_total = r.shipments_assigned + r.shipments_unassigned
 
         # KPI tiles
         self.kpi_cost.update(f'{r.total_cost:,.0f}')
@@ -720,6 +720,24 @@ class SAPQuantumTransportGUI:
                 self.log.write(
                     f'  … and {len(r.assignments) - 5} more assignments', 'sep')
         self.log.write('─' * 72, 'sep')
+
+        # Educational notes
+        if r.metadata:
+            if not r.metadata.get('cobyla_success', True):
+                self.log.write(
+                    '  ℹ  COBYLA did not converge within the iteration budget — '
+                    'result is the best found so far.', 'warn')
+                self.log.write(
+                    '     Try increasing QAOA depth p or reducing problem size '
+                    'for better convergence.', 'warn')
+            n_attempted = r.shipments_assigned + r.shipments_unassigned
+            if r.shipments_unassigned > 0:
+                self.log.write(
+                    f'  ℹ  {r.shipments_unassigned}/{n_attempted} shipments unassigned — '
+                    'partial solutions are normal for QAOA with a limited iteration budget.', 'warn')
+                self.log.write(
+                    '     Increase p (QAOA depth) or shots to improve solution quality.', 'warn')
+            self.log.write('', '')
 
     def _show_qubit_map_before(self, ships, trucks):
         n_t = len(trucks)
@@ -981,10 +999,11 @@ class SAPQuantumTransportGUI:
             'HOW IT WORKS\n'
             '  • Shipment-truck pairs encoded as qubits (1 qubit per pair)\n'
             '  • QUBO → Ising Hamiltonian via Pauli-Z mapping\n'
-            '  • QAOAAnsatz  p=2 layers (cost + mixer)\n'
-            '  • COBYLA classical optimiser tunes variational parameters\n'
-            '  • 2048 shots on AerSimulator measure the best assignment\n'
-            '  • Qubit map shows exactly which qubit → which assignment\n\n'
+            '  • QAOAAnsatz  p layers (cost unitary + mixer unitary, configurable)\n'
+            '  • COBYLA classical optimiser tunes 2p variational parameters (γ, β)\n'
+            '  • Shots on AerSimulator measure the best assignment bitstring\n'
+            '  • Qubit map shows exactly which qubit → which assignment\n'
+            '  • Higher p = deeper circuit = better solution quality (but slower)\n\n'
             'CURRENT STATE OF QUANTUM COMPUTING\n'
             '  • Quantum advantage for optimisation not yet achieved\n'
             '  • This demo shows the approach SAP is exploring for future\n'
