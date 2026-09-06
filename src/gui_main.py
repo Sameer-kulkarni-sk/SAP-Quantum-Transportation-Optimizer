@@ -412,7 +412,11 @@ class SAPQuantumTransportGUI:
             except Exception:
                 pass
 
-        return cached_png if cached_png.exists() else None
+        if cached_png.exists():
+            return cached_png
+        # rsvg-convert not available — fall back to icon.png
+        icon = root_dir / 'icon.png'
+        return icon if icon.exists() else None
 
         return None
 
