@@ -5,6 +5,8 @@ SAP Fiori Design Language — Shell Bar · Left Nav · KPI Tiles · Log Panel
 """
 
 import sys
+import subprocess
+import platform as _platform_mod
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 from pathlib import Path
@@ -54,11 +56,7 @@ C = {
     'log_sep':       '#6A6D70',
 }
 
-import platform as _platform
-if _platform.system() == 'Darwin':
-    FONT_SANS = 'Helvetica Neue'
-    FONT_MONO = 'Menlo'
-else:
+if _platform_mod.system() == 'Darwin':
     FONT_SANS = 'DejaVu Sans'
     FONT_MONO = 'DejaVu Sans Mono'
 
@@ -384,27 +382,34 @@ class SAPQuantumTransportGUI:
     @staticmethod
     def _resolve_logo(root_dir: Path) -> Path | None:
         """
-        Return the best available logo path, rasterizing SVG → PNG if needed.
-        Priority: SAP_2011_logo.svg  >  sap_logo.png  >  icon.png
+        Rasterize SAP_2011_logo.svg → sap_logo_cached.png on first run.
+        Uses sips on macOS, rsvg-convert on Linux (RasQberry/Pi).
+        Returns the cached PNG path, or None if rasterization fails.
         """
         svg = root_dir / 'SAP_2011_logo.svg'
         cached_png = root_dir / 'sap_logo_cached.png'
 
-        if svg.exists():
-            # Rasterize SVG once; cache the PNG next to the project root
-            if not cached_png.exists():
-                try:
-                    import cairosvg
-                    cairosvg.svg2png(url=str(svg), write_to=str(cached_png),
-                                     output_height=40)
-                except Exception:
-                    pass
-            if cached_png.exists():
-                return cached_png
+        if not svg.exists():
+            return None
 
-        for candidate in [root_dir / 'sap_logo.png', root_dir / 'icon.png']:
-            if candidate.exists():
-                return candidate
+        if not cached_png.exists():
+            try:
+                if _platform_mod.system() == 'Darwin':
+                    subprocess.run(
+                        ['sips', '-s', 'format', 'png', str(svg),
+                         '--out', str(cached_png)],
+                        check=True, capture_output=True
+                    )
+                else:
+                    subprocess.run(
+                        ['rsvg-convert', '-h', '40', str(svg),
+                         '-o', str(cached_png)],
+                        check=True, capture_output=True
+                    )
+            except Exception:
+                pass
+
+        return cached_png if cached_png.exists() else None
 
         return None
 
