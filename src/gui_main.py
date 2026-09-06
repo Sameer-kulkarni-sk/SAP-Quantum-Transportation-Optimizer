@@ -57,6 +57,9 @@ C = {
 }
 
 if _platform_mod.system() == 'Darwin':
+    FONT_SANS = 'Helvetica Neue'
+    FONT_MONO = 'Menlo'
+else:
     FONT_SANS = 'DejaVu Sans'
     FONT_MONO = 'DejaVu Sans Mono'
 
