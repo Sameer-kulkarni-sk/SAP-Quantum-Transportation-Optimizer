@@ -20,7 +20,7 @@
   "browser_based": false,
   "loop_ok": false,
   "timeout": 0,
-  "icon": { "type": "system", "path": "applications-science" },
+  "icon": { "type": "file", "path": "icon.png" },
   "menu": { "show": true, "order": 71 },
   "desktop": { "show": true, "terminal": false }
 }
